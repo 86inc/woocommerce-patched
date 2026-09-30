@@ -251,10 +251,10 @@ index a0591a882c49f090aa03b0287ba6b4721c8cf750..8cd63514582eb12923fa18691898d0c2
  		try {
  			const cartData: CartResponse = await response.json();
  			const { receiveCart, receiveError } = dispatch;
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
 index 07aa74d3319327f371716d1b636b26bf04356dc7..fd5ca5a66a64dfc2b322a818634e00ca1e454f3f 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
 @@ -1,5 +1,6 @@
  export const ACTION_TYPES = {
  	ADD_ADDRESS_AUTOCOMPLETE_PROVIDER: 'ADD_ADDRESS_AUTOCOMPLETE_PROVIDER',
@@ -262,10 +262,10 @@ index 07aa74d3319327f371716d1b636b26bf04356dc7..fd5ca5a66a64dfc2b322a818634e00ca
  	SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER:
  		'SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER',
  	DECREMENT_CALCULATING: 'DECREMENT_CALCULATING',
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
 index e84dedb29a6663b3617f4ce00df76c2493d587e5..41efeda74effaf82b7c15abfa10166d33a5c4edf 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
 @@ -2,6 +2,7 @@
   * External dependencies
   */
@@ -293,10 +293,10 @@ index e84dedb29a6663b3617f4ce00df76c2493d587e5..41efeda74effaf82b7c15abfa10166d3
  /**
   * Set the customer id
   *
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
 index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e42d07e11 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
 @@ -9,6 +9,7 @@ import { createReduxStore, register, subscribe } from '@wordpress/data';
  import { STORE_KEY } from './constants';
  import * as selectors from './selectors';
@@ -322,10 +322,10 @@ index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e
  subscribe( pushChanges, store );
  
  export const CHECKOUT_STORE_KEY = STORE_KEY;
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
 index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9ee8efb149 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
 @@ -2,6 +2,7 @@
   * External dependencies
   */
@@ -388,11 +388,11 @@ index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9e
  		case types.SET_CUSTOMER_ID:
  			if ( action.customerId !== undefined ) {
  				newState = {
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..70b4043396517cd9913a572d00eb9d3aa3b96fdf
 --- /dev/null
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts
 @@ -0,0 +1,109 @@
 +/**
 + * External dependencies
@@ -503,10 +503,10 @@ index 0000000000000000000000000000000000000000..70b4043396517cd9913a572d00eb9d3a
 +			processErrorResponse( error as ApiErrorResponse );
 +		}
 +	};
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
 index eec2a61a3a984f3ceef540530a439ad8d8e530bf..41a401aeb26c908b98fcfc75444de2ac6b9ba70c 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
 @@ -1,10 +1,10 @@
  /**
   * External dependencies
@@ -564,10 +564,10 @@ index eec2a61a3a984f3ceef540530a439ad8d8e530bf..41a401aeb26c908b98fcfc75444de2ac
  export const getCustomerId = ( state: CheckoutState ) => {
  	return state.customerId;
  };
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
 index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d460ca8d9 100644
---- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
+--- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
 @@ -1,3 +1,8 @@
 +/**
 + * External dependencies
@@ -708,11 +708,11 @@ index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d
 +		} );
 +	} );
  } );
-diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
+diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..13e72e29df68d2be81e25fa6e23e6f970bb1934c
 --- /dev/null
-+++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts
 @@ -0,0 +1,168 @@
 +/**
 + * External dependencies

@@ -136,6 +136,8 @@ jobs:
       - name: Collect result
         id: collect
         if: always() && steps.claude.outcome != 'skipped' && steps.diagnose.outcome == 'success'
+        env:
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
           out="$RUNNER_TEMP/repair"
           mkdir -p "$out/patches"
@@ -146,6 +148,12 @@ jobs:
             cp "$WORK_DIR/repair/SUMMARY.md" "$out/"
           else
             printf 'RESULT: gave-up\n\nClaude Code did not write a summary (it may have hit a usage or turn limit).\n' > "$out/SUMMARY.md"
+            if [ -f "$EXECUTION_FILE" ]; then
+              final="$(jq -r '[.. | objects | select(.type? == "result")] | last | .result // empty' "$EXECUTION_FILE" 2>/dev/null)"
+              if [ -n "$final" ]; then
+                printf '\nIts last message:\n\n> %s\n' "$final" >> "$out/SUMMARY.md"
+              fi
+            fi
           fi
           if [ "$(head -1 "$out/SUMMARY.md")" = "RESULT: fixed" ]; then
             echo "result=fixed" >> "$GITHUB_OUTPUT"

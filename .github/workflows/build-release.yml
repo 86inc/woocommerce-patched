@@ -61,8 +61,22 @@ jobs:
             gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/enable"
           done
 
+  # claude-code-action rejects push events, so a push re-runs the whole
+  # workflow as a dispatch where drift review and repair can run.
+  redispatch:
+    name: Re-run as dispatch
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build-release.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME"
+
   resolve:
     name: Resolve tag
+    if: github.event_name != 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -171,6 +185,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # Push builds re-run as a dispatch by this repo's own workflow token.
+          allowed_bots: github-actions
           prompt: Read ${{ env.WORK_DIR }}/drift/TASK.md and follow it.
           claude_args: >-
             --model opus

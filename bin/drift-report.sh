@@ -58,10 +58,14 @@ trap 'rm -f "$body"' EXIT
 		echo
 		echo "| Patch | Severity | File | Finding |"
 		echo "| ----- | -------- | ---- | ------- |"
-		# Findings are model output: keep each cell on one line and pipes escaped.
-		jq -r '.[] | [.patch, .severity, .file, .summary]
+		# Findings are model output: patch ids must be real, cells stay on one line
+		# with pipes escaped, and code goes in collapsed blocks below the table.
+		jq -r --argjson ids "$(jq -c '[.patches[].id]' "$(dirname "$0")/../patches.json")" '
+			.[] | [(if (.patch as $p | $ids | index($p)) then .patch else "unknown" end), .severity, .file, .summary]
 			| map(tostring | gsub("[\r\n]+"; " ") | gsub("\\|"; "\\|"))
 			| "| `\(.[0])` | \(.[1]) | `\(.[2])` | \(.[3]) |"' <<<"$findings"
+		jq -r '.[] | select((.suggested_fix // "") != "")
+			| "\n<details><summary>Suggested fix: \(.file | gsub("[\r\n]+"; " "))</summary>\n\n````diff\n\(.suggested_fix | gsub("````"; "` ` ` `"))\n````\n\n</details>"' <<<"$findings"
 	fi
 } > "$body"
 

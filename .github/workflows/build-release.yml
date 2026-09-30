@@ -177,7 +177,7 @@ jobs:
             --max-turns 60
             --allowedTools "Read,Glob,Grep"
             --disallowedTools "Bash,Edit,MultiEdit,Write,NotebookEdit,WebFetch,WebSearch,Task"
-            --json-schema '{"type":"object","properties":{"risk":{"type":"string","enum":["none","low","high"]},"findings":{"type":"array","items":{"type":"object","properties":{"patch":{"type":"string"},"severity":{"type":"string","enum":["low","high"]},"file":{"type":"string"},"summary":{"type":"string"}},"required":["patch","severity","file","summary"]}}},"required":["risk","findings"]}'
+            --json-schema '{"type":"object","properties":{"risk":{"type":"string","enum":["none","low","high"]},"findings":{"type":"array","items":{"type":"object","properties":{"patch":{"type":"string","description":"Patch id from patches.json"},"severity":{"type":"string","enum":["low","high"]},"file":{"type":"string"},"summary":{"type":"string"},"suggested_fix":{"type":"string","description":"Optional code change, as a unified diff"}},"required":["patch","severity","file","summary"]}}},"required":["risk","findings"]}'
 
   drift-report:
     name: Report drift review

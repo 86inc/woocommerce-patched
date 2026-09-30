@@ -27,4 +27,4 @@ Ignore changes that don't affect any intent: formatting, unrelated features, and
 - Only report what you can point to in the code, with the file and what it does. Don't speculate about changes you didn't see.
 - `high` means a "Must achieve" or "Must not change" item is likely broken, or per-user data can now end up in cached HTML for anonymous visitors. `low` means worth a human look but probably fine. If nothing qualifies, return no findings.
 
-Return the structured result: overall `risk` (the highest severity found, or `none`) and one finding per issue.
+Return the structured result: overall `risk` (the highest severity found, or `none`) and one finding per issue. In each finding, `patch` is the patch's `id` from `patches.json`, `file` is the upstream file, and `summary` explains the problem in prose. Put any proposed code change in `suggested_fix` as a unified diff, never in the other fields.

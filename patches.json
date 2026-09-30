@@ -69,8 +69,8 @@
 				"plugins/woocommerce/tests/php/src/Blocks/"
 			],
 			"min_version": "11.1.0",
-			"notes": "Drop once #64289 ships. Includes the rename to woocommerce_embed_personalized_data (uncommitted on the PR branch); re-pin pinned_commit once it is pushed.",
-			"refreshed_on": "11.1.0",
+			"notes": "Drop once #64289 ships. Refreshed from the PR with the rename to woocommerce_embed_personalized_data and without the PR's cosmetic-only hunks; re-pin pinned_commit once the rename is pushed to the PR branch.",
+			"refreshed_on": "11.1.1",
 			"tests": {
 				"jest": [
 					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts",

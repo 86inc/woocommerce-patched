@@ -53,7 +53,7 @@ index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddf
 +	);
 +};
 diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60ef5ef542b 100644
+index 7dca9b2133e85e4f4615904f95c7fbae76be3912..e7e431593d77c203d9fc958d08ae1b2395acee19 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 +++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 @@ -482,6 +482,58 @@ function preloadA11y(): void {
@@ -129,26 +129,7 @@ index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60e
  				return response;
  			},
  			// The single place that emits the cart's cross-cutting side
-@@ -588,6 +642,7 @@ const universalLock =
- 
- // Todo: export this store once the store is public.
- const { state } = store< Store >( 'woocommerce', {}, { lock: universalLock } );
-+
- const { actions } = store< Store >(
- 	'woocommerce',
- 	{
-@@ -1185,7 +1240,9 @@ const { actions } = store< Store >(
- 				}
- 
- 				// Skips if there's a pending request.
--				if ( pendingRefresh ) return;
-+				if ( pendingRefresh ) {
-+					return;
-+				}
- 
- 				pendingRefresh = true;
- 
-@@ -1201,6 +1258,7 @@ const { actions } = store< Store >(
+@@ -1201,6 +1255,7 @@ const { actions } = store< Store >(
  
  					// Extract fresh nonce from response headers.
  					state.nonce = res.headers.get( 'Nonce' ) || state.nonce;
@@ -156,18 +137,7 @@ index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60e
  
  					if ( resolveNonceReady ) {
  						resolveNonceReady();
-@@ -1210,8 +1268,9 @@ const { actions } = store< Store >(
- 					const json = ( yield res.json() ) as Cart;
- 
- 					// Checks if the response contains an error.
--					if ( isApiErrorResponse( res, json ) )
-+					if ( isApiErrorResponse( res, json ) ) {
- 						throw generateError( json );
-+					}
- 
- 					// If the batcher started a cycle while we were fetching,
- 					// discard this response — the batcher will reconcile.
-@@ -1222,6 +1281,8 @@ const { actions } = store< Store >(
+@@ -1222,6 +1277,8 @@ const { actions } = store< Store >(
  					// Updates the local cart.
  					state.cart = json;
  
@@ -873,7 +843,7 @@ index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d4
 +	} );
 +} );
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
-index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..7ee3cbd0ffc9540624f4792466392ffc37f6162c 100644
+index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..bcf95b5757160e715d0af9b19a482b506b92ded7 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 @@ -1,6 +1,7 @@
@@ -884,11 +854,9 @@ index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..7ee3cbd0ffc9540624f4792466392ffc
  use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
  use Automattic\WooCommerce\Enums\TaxDisplayMode;
  
-@@ -275,9 +276,12 @@ class Cart extends AbstractBlock {
- 			}
- 		}
+@@ -277,7 +278,11 @@ class Cart extends AbstractBlock {
  
--		// Hydrate the following data depending on admin or frontend context.
+ 		// Hydrate the following data depending on admin or frontend context.
  		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
 -			$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
 +			$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );

@@ -9,12 +9,14 @@ Upstream: [#64289](https://github.com/woocommerce/woocommerce/pull/64289)
   - Cart, Checkout, Mini-Cart (and its footer and title counter), and Product Button render empty-cart state and no item counts.
   - `BlocksSharedState` provides the empty cart schema instead of the real cart.
   - Checkout renders `CheckoutSkeleton` until the `getCheckoutData` resolver has loaded `GET /wc/store/v1/checkout?__experimental_calc_totals=true`, which returns `__experimentalCart`.
+- The `getCheckoutData` resolver only fetches on non-hydrated pages. It skips when the `checkoutData` setting was preloaded, not only when the order ID is above 0: `GET /checkout` never creates a draft order, so hydrated pages usually have order ID 0.
+- `__experimental_calc_totals` recalculates cart totals on both GET paths: with an existing draft order (the response gains `__experimentalCart`) and without one (the no-order response always embeds `__experimentalCart`).
 - The iAPI cart store mirrors fetched cart data into the `wc/store/cart` data store (`pushCartToReduxStore`, which sets `window.wcIapiCartHydrated`), and mirrors response nonces into apiFetch (`pushNonceToApiFetchMiddleware`).
 
 ## Must not change
 
 - `WC_Cache_Helper::prevent_caching()` and the no-cache headers on cart, checkout, and account pages. Hosts strip those themselves via `wp_headers`.
-- Output when the filter is not used: logged-in and non-empty-cart requests render exactly as vanilla WooCommerce.
+- Output when the filter is not used: logged-in and non-empty-cart requests render exactly as vanilla WooCommerce, with no extra Store API requests on page load.
 - Plugin version or database migrations.
 
 ## Watch upstream
@@ -27,6 +29,6 @@ Upstream: [#64289](https://github.com/woocommerce/woocommerce/pull/64289)
 
 ## Tests
 
-- PHPUnit: `tests/php/src/Blocks/Utils/BlocksSharedStateTest.php`.
+- PHPUnit: `tests/php/src/Blocks/Utils/BlocksSharedStateTest.php`, and `test_get_without_draft_order_calc_totals_recalculates_cart` in `tests/php/src/Blocks/StoreApi/Routes/Checkout.php`.
 - Jest: `packages/public-api/block-data/checkout/test/resolvers.ts`, `.../checkout/test/reducer.ts`.
 - Smoke test: an anonymous visitor with a non-empty cart, with the filter returning false, gets no cart JSON or item counts in the cart page or product page HTML.

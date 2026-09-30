@@ -390,15 +390,16 @@ index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9e
  				newState = {
 diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..a2d072c19506bb96d3723370d8edfbff2ad54596
+index 0000000000000000000000000000000000000000..70b4043396517cd9913a572d00eb9d3aa3b96fdf
 --- /dev/null
 +++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,109 @@
 +/**
 + * External dependencies
 + */
 +import apiFetch from '@wordpress/api-fetch';
 +import { dispatch } from '@wordpress/data';
++import { getSetting } from '@woocommerce/settings';
 +import type {
 +	ApiErrorResponse,
 +	CartResponse,
@@ -460,7 +461,14 @@ index 0000000000000000000000000000000000000000..a2d072c19506bb96d3723370d8edfbff
 +			return;
 +		}
 +
-+		if ( select( STORE_KEY ).getOrderId() > 0 ) {
++		// GET /checkout doesn't create a draft order, so a server-hydrated page
++		// can still have order ID 0; the preloaded payload is the real signal.
++		const isHydrated =
++			Object.keys(
++				getSetting< Record< string, unknown > >( 'checkoutData', {} )
++			).length > 0;
++
++		if ( isHydrated || select( STORE_KEY ).getOrderId() > 0 ) {
 +			return;
 +		}
 +
@@ -702,10 +710,10 @@ index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d
  } );
 diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d483cc5c37
+index 0000000000000000000000000000000000000000..4402b6b6d0c0b7552013dddedf85c99cadc0a7bb
 --- /dev/null
 +++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,163 @@
 +/**
 + * External dependencies
 + */
@@ -740,6 +748,18 @@ index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d4
 +	CART_STORE_KEY: 'wc/store/cart',
 +} ) );
 +
++let mockPreloadedCheckoutData: Record< string, unknown > = {};
++jest.mock( '@woocommerce/settings', () => {
++	const actual = jest.requireActual( '@woocommerce/settings' );
++	return {
++		...actual,
++		getSetting: ( name: string, ...rest: unknown[] ) =>
++			name === 'checkoutData'
++				? mockPreloadedCheckoutData
++				: actual.getSetting( name, ...rest ),
++	};
++} );
++
 +const setCartHashCookie = ( present: boolean ) => {
 +	if ( present ) {
 +		document.cookie = 'woocommerce_cart_hash=abc123';
@@ -761,6 +781,7 @@ index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d4
 +	beforeEach( () => {
 +		jest.clearAllMocks();
 +		setCartHashCookie( true );
++		mockPreloadedCheckoutData = {};
 +		( isEditor as jest.Mock ).mockReturnValue( false );
 +	} );
 +
@@ -785,6 +806,20 @@ index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d4
 +			// @ts-expect-error partial dispatch for test
 +			dispatch,
 +			select: makeSelect( 5 ),
++		} );
++
++		expect( apiFetch ).not.toHaveBeenCalled();
++		expect( dispatch.receiveCheckoutData ).not.toHaveBeenCalled();
++	} );
++
++	it( 'skips the request when checkout data was preloaded without a draft order', async () => {
++		mockPreloadedCheckoutData = { order_id: 0, customer_id: 0 };
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 0 ),
 +		} );
 +
 +		expect( apiFetch ).not.toHaveBeenCalled();
@@ -1199,7 +1234,7 @@ index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8
  	 * Get currency data to include in settings.
  	 *
 diff --git a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
-index c33f1a42451e17939cfb31c9622ece0fdbfc801f..737c2997a19bc2e4d7d6b495e52557a7650a1c4c 100644
+index c33f1a42451e17939cfb31c9622ece0fdbfc801f..1667a745965c74270f3e5afafe3df7cd97aaff3a 100644
 --- a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
 +++ b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
 @@ -79,7 +79,12 @@ class Checkout extends AbstractCartRoute {
@@ -1216,7 +1251,13 @@ index c33f1a42451e17939cfb31c9622ece0fdbfc801f..737c2997a19bc2e4d7d6b495e52557a7
  				],
  			],
  			[
-@@ -216,13 +221,18 @@ class Checkout extends AbstractCartRoute {
+@@ -213,16 +218,28 @@ class Checkout extends AbstractCartRoute {
+ 	protected function get_route_response( \WP_REST_Request $request ) {
+ 		$this->order = $this->get_draft_order();
+ 
++		// Clients opt-in to fresh totals and a cart payload via this param, mirroring the PUT flow.
++		$calc_totals = true === $request->get_param( '__experimental_calc_totals' );
++
  		if ( $this->order ) {
  			$this->create_or_update_draft_order( $request );
  
@@ -1232,13 +1273,17 @@ index c33f1a42451e17939cfb31c9622ece0fdbfc801f..737c2997a19bc2e4d7d6b495e52557a7
 +				'payment_result' => new PaymentResult(),
 +			];
 +
-+			// Clients opt-in to fresh totals and a cart payload via this param, mirroring the PUT flow.
-+			if ( true === $request->get_param( '__experimental_calc_totals' ) ) {
++			if ( $calc_totals ) {
 +				$this->cart_controller->calculate_totals();
 +				$response['cart'] = $this->cart_controller->get_cart_instance();
 +			}
 +
 +			return $this->prepare_item_for_response( (object) $response, $request );
++		}
++
++		// The no-order response always embeds the cart, so only its totals need refreshing.
++		if ( $calc_totals ) {
++			$this->cart_controller->calculate_totals();
  		}
  
  		return $this->build_draft_route_response( $request );
@@ -1320,6 +1365,43 @@ index 0000000000000000000000000000000000000000..7c188934d1ebf03603034e23ea2bf6b8
 +		return (bool) apply_filters( 'woocommerce_embed_personalized_data', $default, $store_namespace );
 +	}
 +}
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
+index 89ce83d3e7ddad8d1dfbad2f47d0668cbc5d5dcb..8b63d36c2867cbb2f146513167c6f6ef41297aee 100644
+--- a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
++++ b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
+@@ -2713,6 +2713,32 @@ class Checkout extends \WP_Test_REST_TestCase {
+ 		$this->assertEmpty( WC()->session->get( 'store_api_draft_order' ) );
+ 	}
+ 
++	/**
++	 * GET with `__experimental_calc_totals` and no draft order recalculates the embedded cart's totals.
++	 */
++	public function test_get_without_draft_order_calc_totals_recalculates_cart() {
++		$calculated = 0;
++		$counter    = function () use ( &$calculated ) {
++			++$calculated;
++		};
++		add_action( 'woocommerce_after_calculate_totals', $counter );
++
++		$request = new \WP_REST_Request( 'GET', '/wc/store/v1/checkout' );
++		$request->set_header( 'Nonce', wp_create_nonce( 'wc_store_api' ) );
++		$request->set_param( '__experimental_calc_totals', true );
++
++		$response = rest_get_server()->dispatch( $request );
++		$data     = $response->get_data();
++
++		remove_action( 'woocommerce_after_calculate_totals', $counter );
++
++		$this->assertEquals( 200, $response->get_status() );
++		$this->assertSame( 0, $data['order_id'] );
++		$this->assertGreaterThan( 0, $calculated, 'Cart totals should be recalculated.' );
++		$this->assertArrayHasKey( '__experimentalCart', $data );
++		$this->assertCount( 2, $data['__experimentalCart']->items );
++	}
++
+ 	/**
+ 	 * GET should not fire `woocommerce_store_api_checkout_update_order_meta` (only PATCH/POST do).
+ 	 */
 diff --git a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
 index 0e9bef12b06516bff14de7d45db1c7e5f1241bbc..aba89a5363bc1f01bf95b24f3a785e30949c4d88 100644
 --- a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php

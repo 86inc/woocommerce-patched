@@ -64,7 +64,7 @@
 			"upstream_pr": 64289,
 			"head_repo": "jbouganim/woocommerce",
 			"head_ref": "feature/edge-caching-phase-1",
-			"pinned_commit": "d5410e08ad8edb81862e6c66c32dd3b3938d623e",
+			"pinned_commit": "1c45035f76ed0349ed54806739e4f05f56e8758d",
 			"base_commit": "b50e93d92baf998c0b50c707966969e86749df1f",
 			"file": "patches/0003-edge-cache-filter.patch",
 			"intent": "patches/0003-edge-cache-filter.intent.md",
@@ -78,8 +78,8 @@
 				"plugins/woocommerce/tests/php/src/Blocks/"
 			],
 			"min_version": "11.1.0",
-			"notes": "Drop once #64289 ships. Refreshed from the PR with the rename to woocommerce_embed_personalized_data and without the PR's cosmetic-only hunks; re-pin pinned_commit once the rename is pushed to the PR branch.",
-			"refreshed_on": "11.1.1",
+			"notes": "Drop once #64289 ships. Refreshed from the PR onto the 11.1.x file layout (checkout data moved to packages/public-api in #66974), without the PR's cosmetic-only hunks.",
+			"refreshed_on": "11.1.2",
 			"watch_paths": [
 				"plugins/woocommerce/src/Blocks/BlockTypes/",
 				"plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php",
@@ -96,7 +96,8 @@
 					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
 				],
 				"phpunit": [
-					"BlocksSharedStateTest"
+					"BlocksSharedStateTest",
+					"test_get_without_draft_order_calc_totals_recalculates_cart"
 				]
 			}
 		}

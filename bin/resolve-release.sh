@@ -13,6 +13,8 @@
 #   release_tag  Our release tag, <tag>-build.<n>.
 #   is_latest    "true" when tag is the latest stable upstream release.
 #   skip         "true" when a release for this build already exists.
+#   previous_tag Newest upstream tag below this one that we've released (may be empty).
+#   new_tag      "true" when no release exists for this tag yet.
 #
 # Env: GH_TOKEN, and GITHUB_REPOSITORY (default: 86inc/woocommerce-patched).
 
@@ -44,6 +46,16 @@ fi
 
 build="$tag+$("$ROOT/bin/patch-set-hash.sh")"
 
+release_tags="$(gh release list -R "$REPO" --limit 200 --json tagName --jq '.[].tagName')"
+
+# The newest upstream tag we've released before this one, for the drift review diff.
+previous_tag="$(while read -r release_tag; do
+	base="${release_tag%-build.*}"
+	if [ "$base" != "$release_tag" ] && [ "$base" != "$tag" ]; then
+		echo "$base"
+	fi
+done <<<"$release_tags" | { cat; echo "$tag"; } | sort -uV | awk -v tag="$tag" '$0 == tag { print prev; exit } { prev = $0 }')"
+
 skip=false
 highest=0
 while read -r release_tag; do
@@ -57,7 +69,7 @@ while read -r release_tag; do
 	if gh release view "$release_tag" -R "$REPO" --json body --jq .body | grep -qF "Build: $build"; then
 		skip=true
 	fi
-done < <(gh release list -R "$REPO" --limit 200 --json tagName --jq '.[].tagName')
+done <<<"$release_tags"
 
 if [ "$force" = "true" ]; then
 	skip=false
@@ -68,3 +80,5 @@ echo "build=$build"
 echo "release_tag=$tag-build.$((highest + 1))"
 echo "is_latest=$([ "$tag" = "$latest" ] && echo true || echo false)"
 echo "skip=$skip"
+echo "previous_tag=$previous_tag"
+echo "new_tag=$([ "$highest" -eq 0 ] && echo true || echo false)"

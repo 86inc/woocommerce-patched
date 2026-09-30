@@ -98,14 +98,29 @@ apply_patch() {
 	fi
 }
 
+# True when version $1 is lower than $2. Pre-release suffixes are ignored, so
+# 11.2.0-beta.1 counts as 11.2.0.
+version_lt() {
+	local a="${1%%-*}" b="${2%%-*}"
+	[ "$a" != "$b" ] && [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" = "$a" ]
+}
+
 apply_patches() {
 	local results="[]"
-	local id file status conflicted
+	local id file min_version shipped_in status conflicted
 
-	while IFS=$'\t' read -r id file; do
+	# Unit separator, not tab: `read` collapses runs of tabs, which would shift empty fields.
+	while IFS=$'\x1f' read -r id file min_version shipped_in; do
 		log "Applying $id"
-		status="$(apply_patch "$ROOT/$file")"
-		conflicted="$(git_work diff --name-only --diff-filter=U | jq -R . | jq -sc .)"
+		conflicted="[]"
+		if [ -n "$min_version" ] && version_lt "$TAG" "$min_version"; then
+			status="before-min-version"
+		elif [ -n "$shipped_in" ] && ! version_lt "$TAG" "$shipped_in"; then
+			status="shipped"
+		else
+			status="$(apply_patch "$ROOT/$file")"
+			conflicted="$(git_work diff --name-only --diff-filter=U | jq -R . | jq -sc .)"
+		fi
 		echo "$id: $status"
 
 		results="$(jq -c --arg id "$id" --arg status "$status" --argjson conflicted "$conflicted" \
@@ -121,7 +136,7 @@ apply_patches() {
 				exit 2
 				;;
 		esac
-	done < <(jq -r '.patches[] | [.id, .file] | @tsv' "$MANIFEST")
+	done < <(jq -r '.patches[] | [.id, .file, .min_version // "", .shipped_in // ""] | join("\u001f")' "$MANIFEST")
 
 	PATCH_RESULTS="$results"
 }
@@ -207,9 +222,10 @@ write_outputs() {
 checkout_tag
 apply_patches
 
+jq -n --arg tag "$TAG" --argjson patches "$PATCH_RESULTS" \
+	'{tag: $tag, result: "applied", patches: $patches}' > "$REPORT"
 if [ "$APPLY_ONLY" -eq 1 ]; then
-	jq -n --arg tag "$TAG" --argjson patches "$PATCH_RESULTS" \
-		'{tag: $tag, result: "applied", patches: $patches}' | tee "$REPORT"
+	cat "$REPORT"
 	exit 0
 fi
 

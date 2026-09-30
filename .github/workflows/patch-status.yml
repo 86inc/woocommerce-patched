@@ -1,0 +1,54 @@
+name: Patch status
+
+# Daily check of each patch's upstream PR. Keeps the "Patch status" issue current,
+# comments on changes, and marks patches `shipped_in` once a stable release
+# includes them (committed straight to main).
+
+on:
+  schedule:
+    - cron: '43 13 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: patch-status
+  cancel-in-progress: false
+
+jobs:
+  status:
+    name: Check upstream PRs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAINTAINER: ${{ vars.MAINTAINER || 'jbouganim' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check status
+        run: bin/patch-status.sh | tee "$RUNNER_TEMP/status.json"
+
+      - name: Retire shipped patches
+        id: retire
+        run: |
+          retired="$(bin/retire-shipped.sh "$RUNNER_TEMP/status.json")"
+          if [ -z "$retired" ] || git diff --quiet patches.json; then
+            exit 0
+          fi
+          {
+            echo "Retire patches shipped upstream"
+            echo
+            while read -r id version; do echo "$id shipped in WooCommerce $version."; done <<<"$retired"
+          } > "$RUNNER_TEMP/message.txt"
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -F "$RUNNER_TEMP/message.txt" patches.json
+          git push --quiet origin HEAD:main
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Update status issue
+        env:
+          RETIRE_COMMIT: ${{ steps.retire.outputs.commit }}
+        run: bin/patch-status-issue.sh "$RUNNER_TEMP/status.json"

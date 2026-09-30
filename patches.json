@@ -17,6 +17,10 @@
 			],
 			"min_version": "11.1.0",
 			"notes": "Drop once #66950 ships.",
+			"watch_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/middleware/",
+				"plugins/woocommerce/src/Blocks/AssetsController.php"
+			],
 			"tests": {
 				"jest": [
 					"plugins/woocommerce/client/blocks/assets/js/middleware/test/store-api-nonce.js"
@@ -41,6 +45,11 @@
 			],
 			"min_version": "11.1.0",
 			"notes": "Drop once #66951 ships.",
+			"watch_paths": [
+				"plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/",
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/"
+			],
 			"tests": {
 				"jest": [
 					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
@@ -71,6 +80,15 @@
 			"min_version": "11.1.0",
 			"notes": "Drop once #64289 ships. Refreshed from the PR with the rename to woocommerce_embed_personalized_data and without the PR's cosmetic-only hunks; re-pin pinned_commit once the rename is pushed to the PR branch.",
 			"refreshed_on": "11.1.1",
+			"watch_paths": [
+				"plugins/woocommerce/src/Blocks/BlockTypes/",
+				"plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php",
+				"plugins/woocommerce/src/Utilities/HydrationUtil.php",
+				"plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php",
+				"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/",
+				"plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/",
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/"
+			],
 			"tests": {
 				"jest": [
 					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts",

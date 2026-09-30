@@ -6,13 +6,15 @@
 # Usage: bin/diagnose.sh <tag>
 #
 # Prints key=value lines (for $GITHUB_OUTPUT), with progress on stderr:
-#   mode   none | conflict | build | tests | smoke | setup
-#   patch  The conflicting patch id (conflict mode only).
+#   mode   none | conflict | merged-upstream | build | tests | smoke | setup
+#   patch  The conflicting patch id (conflict and merged-upstream modes).
 #
 # For every mode the agent can act on, writes <work root>/repair/TASK.md (from
 # ai/repair-task.md) and the failing step's output to <work root>/repair/failure.log.
-# `setup` means the environment broke before any patch code ran; there's nothing
-# for the agent to fix.
+# `setup` means the environment broke before any patch code ran, and
+# `merged-upstream` that the conflicting patch's PR is merged; neither starts the agent.
+#
+# Env: GH_TOKEN (for the upstream PR lookup).
 
 set -uo pipefail
 
@@ -48,7 +50,7 @@ write_task() {
 
 finish() {
 	local mode="$1" patch="${2:-}"
-	if [ "$mode" != "none" ] && [ "$mode" != "setup" ]; then
+	if [ "$mode" != "none" ] && [ "$mode" != "setup" ] && [ "$mode" != "merged-upstream" ]; then
 		write_task "$mode" "$patch"
 	fi
 	echo "mode=$mode"
@@ -61,6 +63,13 @@ case "$?" in
 	0) ;;
 	2)
 		patch="$(jq -r '[.patches[] | select(.status == "conflict")][0].id' "$WORK_ROOT/$TAG.report.json")"
+		pr="$(jq -r --arg id "$patch" '.patches[] | select(.id == $id) | .upstream_pr // empty' "$ROOT/patches.json")"
+		upstream="$(jq -r '.upstream_repo' "$ROOT/patches.json")"
+		# A merged PR usually conflicts because upstream shipped a reviewed version of
+		# it; retiring the patch (patch-status.yml) is the fix, not an AI rewrite.
+		if [ -n "$pr" ] && [ "$(gh api "repos/$upstream/pulls/$pr" --jq .merged 2>/dev/null)" = "true" ]; then
+			finish merged-upstream "$patch"
+		fi
 		finish conflict "$patch"
 		;;
 	3) finish build ;;

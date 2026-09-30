@@ -99,6 +99,7 @@ jobs:
       WORK_DIR: ${{ github.workspace }}/work
     outputs:
       mode: ${{ steps.diagnose.outputs.mode }}
+      patch: ${{ steps.diagnose.outputs.patch }}
       result: ${{ steps.collect.outputs.result }}
     steps:
       - name: Free disk space
@@ -114,11 +115,15 @@ jobs:
 
       - name: Diagnose
         id: diagnose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bin/diagnose.sh "$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Repair with Claude Code
         id: claude
-        if: steps.diagnose.outputs.mode != 'none' && steps.diagnose.outputs.mode != 'setup'
+        if: >-
+          steps.diagnose.outputs.mode != 'none' && steps.diagnose.outputs.mode != 'setup'
+          && steps.diagnose.outputs.mode != 'merged-upstream'
         continue-on-error: true
         uses: anthropics/claude-code-action@fd1c128679612beff4ca259c78021c506e8aa7a7 # v1.0.237
         env:
@@ -267,6 +272,7 @@ jobs:
       BUILD: ${{ needs.gate.outputs.build }}
       REPAIR_JOB: ${{ needs.repair.result }}
       MODE: ${{ needs.repair.outputs.mode }}
+      PATCH: ${{ needs.repair.outputs.patch }}
       RESULT: ${{ needs.repair.outputs.result }}
       VERIFY_JOB: ${{ needs.verify.result }}
       PR_URL: ${{ needs.open-pr.outputs.url }}
@@ -286,6 +292,8 @@ jobs:
             outcome="Claude Code repaired the patches and the fix passed verification: $PR_URL. Merge it to release \`$TAG\`."
           elif [ "$MODE" = "none" ]; then
             outcome="The build passed when rerun, so nothing needed repair. The next scheduled run will publish it."
+          elif [ "$MODE" = "merged-upstream" ]; then
+            outcome="\`$PATCH\` conflicts, but its upstream PR is merged, so Claude Code was not started. The daily patch status check retires it once a stable release includes the merge; the next build then skips it."
           elif [ "$MODE" = "setup" ]; then
             outcome="The build environment failed before any patch code ran, so Claude Code was not started."
           elif [ "$RESULT" = "fixed" ] && [ "$VERIFY_JOB" = "failure" ]; then

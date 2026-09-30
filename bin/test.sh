@@ -44,11 +44,22 @@ mkdir -p "$WORK_ROOT/.bin"
 corepack enable --install-directory "$WORK_ROOT/.bin" pnpm
 export PATH="$WORK_ROOT/.bin:$PATH"
 
+# Only test patches this build applied (not ones skipped as shipped or too new).
+REPORT="$WORK_ROOT/$TAG.report.json"
+applied='[.patches[] | select(.status == "clean" or .status == "3way" or .status == "upstream") | .id]'
+if [ ! -f "$REPORT" ]; then
+	echo "No patch report at ${REPORT#"$ROOT/"}. Run bin/build.sh $TAG first." >&2
+	exit 1
+fi
+tested_patches() {
+	jq --argjson applied "$(jq -c "$applied" "$REPORT")" '[.patches[] | select(.id as $id | $applied | index($id))]' "$MANIFEST"
+}
+
 # Jest paths are relative to the Blocks package, where its Jest config lives.
 jest_paths=()
 while read -r path; do
 	jest_paths+=( "${path#plugins/woocommerce/client/blocks/}" )
-done < <(jq -r '[.patches[].tests.jest[]?] | unique | .[]' "$MANIFEST")
+done < <(tested_patches | jq -r '[.[].tests.jest[]?] | unique | .[]')
 
 if [ "${#jest_paths[@]}" -gt 0 ]; then
 	log "Jest: ${#jest_paths[@]} suite(s)"
@@ -59,7 +70,7 @@ if [ "$JEST_ONLY" -eq 1 ]; then
 	exit 0
 fi
 
-phpunit_filter="$(jq -r '[.patches[].tests.phpunit[]?] | unique | join("|")' "$MANIFEST")"
+phpunit_filter="$(tested_patches | jq -r '[.[].tests.phpunit[]?] | unique | join("|")')"
 if [ -n "$phpunit_filter" ]; then
 	log "PHPUnit: $phpunit_filter"
 	# build.sh leaves production-only PHP dependencies; PHPUnit needs the dev ones.

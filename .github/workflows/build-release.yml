@@ -3,6 +3,12 @@ name: Build and release
 on:
   schedule:
     - cron: '17 */6 * * *'
+  # A changed patch set (e.g. a merged repair PR) builds the latest tag right away.
+  push:
+    branches: [main]
+    paths:
+      - 'patches/**'
+      - 'patches.json'
   workflow_dispatch:
     inputs:
       tag:
@@ -120,6 +126,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.resolve.outputs.tag }}
@@ -158,6 +165,16 @@ jobs:
             --notes-file notes.md \
             --latest="$IS_LATEST"
 
+      - name: Close build failure issue
+        run: |
+          title="Build failed: WooCommerce $TAG"
+          gh issue list --repo "$GITHUB_REPOSITORY" --state open --author app/github-actions \
+            --search "\"$title\" in:title" --json number,title \
+            | jq -r --arg title "$title" '.[] | select(.title == $title) | .number' \
+            | while read -r number; do
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Published [$RELEASE_TAG]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG)."
+            done
+
   repair:
     name: Repair
     needs: [resolve, build]
@@ -182,16 +199,28 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.resolve.outputs.tag }}
+      BUILD: ${{ needs.resolve.outputs.build }}
+      MAINTAINER: ${{ vars.MAINTAINER || 'jbouganim' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - name: Open or update issue
         run: |
           title="Build failed: WooCommerce ${TAG:-unknown tag}"
-          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number,title \
+          marker="<!-- build-failed: ${BUILD:-unknown} -->"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --author app/github-actions \
+            --search "\"$title\" in:title" --json number,title \
             | jq -r --arg title "$title" '.[] | select(.title == $title) | .number' | head -1)"
-          body="The build for \`${TAG:-unknown tag}\` failed, so no release was published and client sites stay on their current build. See [the run]($RUN_URL). When the build or tests failed, an automatic repair runs next and posts its result here."
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          body="The build for \`${TAG:-unknown tag}\` failed, so no release was published and client sites stay on their current build. See [the run]($RUN_URL). When the build or tests failed, an automatic repair runs next and posts its result here.
+
+          $marker"
+          if [ -z "$existing" ]; then
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body" --assignee "$MAINTAINER"
+          elif { gh issue view "$existing" --repo "$GITHUB_REPOSITORY" --json body --jq .body
+            gh api "repos/$GITHUB_REPOSITORY/issues/$existing/comments" --paginate \
+              --jq '.[] | select(.user.login == "github-actions[bot]") | .body'
+          } | grep -qF "$marker"; then
+            # Already reported for this tag and patch set; stay quiet until something changes.
+            echo "Failure for $BUILD already reported on #$existing"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           fi

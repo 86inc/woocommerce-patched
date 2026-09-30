@@ -75,8 +75,10 @@ jobs:
             if gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --silent 2>/dev/null; then
               echo "A repair branch already exists for $build: $branch"
               run=false
-            elif { gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&per_page=100" --jq '.[].body // ""'
-              gh api --paginate "repos/$GITHUB_REPOSITORY/issues/comments?per_page=100" --jq '.[].body // ""'
+            # Only the workflow's own comments count, so anyone else posting the marker can't block repairs.
+            elif { gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=all&creator=github-actions%5Bbot%5D&per_page=100" --jq '.[].body // ""'
+              gh api --paginate "repos/$GITHUB_REPOSITORY/issues/comments?per_page=100" \
+                --jq '.[] | select(.user.login == "github-actions[bot]") | .body // ""'
             } | grep -qF "<!-- repair-attempted: $build -->"; then
               echo "A repair was already attempted for $build. Dispatch with force to retry."
               run=false
@@ -219,6 +221,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       BRANCH: ${{ needs.gate.outputs.branch }}
       BASE: ${{ github.ref_name }}
+      MAINTAINER: ${{ vars.MAINTAINER || 'jbouganim' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -242,13 +245,14 @@ jobs:
             echo "Changed patches:"
             while read -r id; do echo "- \`$id\`"; done <<<"$changed"
             echo
-            echo "Merging this lets the next scheduled run publish a release for \`$TAG\`."
+            echo "Merging this starts a build that publishes the release for the latest WooCommerce tag."
             echo
             echo "## Agent summary"
             echo
             tail -n +2 "$RUNNER_TEMP/repair/SUMMARY.md"
           } > body.md
-          url="$(gh pr create --base "$BASE" --head "$BRANCH" --title "Refresh patches for WooCommerce $TAG" --body-file body.md)"
+          url="$(gh pr create --base "$BASE" --head "$BRANCH" --title "Refresh patches for WooCommerce $TAG" --body-file body.md \
+            --assignee "$MAINTAINER" --reviewer "$MAINTAINER")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
   report:
@@ -266,6 +270,7 @@ jobs:
       RESULT: ${{ needs.repair.outputs.result }}
       VERIFY_JOB: ${{ needs.verify.result }}
       PR_URL: ${{ needs.open-pr.outputs.url }}
+      MAINTAINER: ${{ vars.MAINTAINER || 'jbouganim' }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -306,10 +311,12 @@ jobs:
           } > comment.md
 
           title="Build failed: WooCommerce $TAG"
-          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number,title \
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --author app/github-actions \
+            --search "\"$title\" in:title" --json number,title \
             | jq -r --arg title "$title" '.[] | select(.title == $title) | .number' | head -1)"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --add-assignee "$MAINTAINER"
           else
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file comment.md
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file comment.md --assignee "$MAINTAINER"
           fi

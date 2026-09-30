@@ -1,0 +1,22 @@
+name: PR policy test
+on:
+  push:
+    branches: [test/pr-policy]
+permissions: {}
+jobs:
+  open:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          git switch -c test/pr-policy-head
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --allow-empty -qm "Empty test commit"
+          git push -q origin test/pr-policy-head
+          gh pr create --base test/pr-policy --head test/pr-policy-head --title "Test: bot PR under collaborators-only policy" \
+            --body "Checks that the repair workflow can still open PRs and notify the maintainer. Safe to ignore; it will be closed." \
+            --assignee jbouganim --reviewer jbouganim

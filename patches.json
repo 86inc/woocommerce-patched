@@ -1,0 +1,86 @@
+{
+	"upstream_repo": "woocommerce/woocommerce",
+	"plugin_description_prefix": "[86inc patched build {build}] ",
+	"patches": [
+		{
+			"id": "nonce-timestamp-trusted",
+			"upstream_pr": 66950,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "fix/store-api-nonce-timestamp-config-key",
+			"pinned_commit": "5ff756ab66b286ada6a05a76cd076003e16734db",
+			"base_commit": "48098ea283a3cbb638a65c0ee619925ebac558a2",
+			"file": "patches/0001-nonce-timestamp-trusted.patch",
+			"intent": "patches/0001-nonce-timestamp-trusted.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/middleware/",
+				"plugins/woocommerce/src/Blocks/AssetsController.php"
+			],
+			"min_version": "11.1.0",
+			"notes": "Drop once #66950 ships.",
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/middleware/test/store-api-nonce.js"
+				],
+				"phpunit": []
+			}
+		},
+		{
+			"id": "mini-cart-module-resturl",
+			"upstream_pr": 66951,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "fix/iapi-cart-refresh-without-resturl",
+			"pinned_commit": "06375a0f3b573fe44cb994eb9d6d4ec77d15b629",
+			"base_commit": "68c1dbbbcb00870ac5fb8339495f58600f4e9a72",
+			"file": "patches/0002-mini-cart-module-resturl.patch",
+			"intent": "patches/0002-mini-cart-module-resturl.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/block.json",
+				"plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php",
+				"plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCart.php"
+			],
+			"min_version": "11.1.0",
+			"notes": "Drop once #66951 ships.",
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
+				],
+				"phpunit": [
+					"MiniCart"
+				]
+			}
+		},
+		{
+			"id": "edge-cache-filter",
+			"upstream_pr": 64289,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "feature/edge-caching-phase-1",
+			"pinned_commit": "d5410e08ad8edb81862e6c66c32dd3b3938d623e",
+			"base_commit": "b50e93d92baf998c0b50c707966969e86749df1f",
+			"file": "patches/0003-edge-cache-filter.patch",
+			"intent": "patches/0003-edge-cache-filter.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/",
+				"plugins/woocommerce/client/blocks/packages/public-api/block-data/",
+				"plugins/woocommerce/src/Blocks/BlockTypes/",
+				"plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php",
+				"plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php",
+				"plugins/woocommerce/src/Utilities/HydrationUtil.php",
+				"plugins/woocommerce/tests/php/src/Blocks/"
+			],
+			"min_version": "11.1.0",
+			"notes": "Drop once #64289 ships. Includes the rename to woocommerce_embed_personalized_data (uncommitted on the PR branch); re-pin pinned_commit once it is pushed.",
+			"refreshed_on": "11.1.0",
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts",
+					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts",
+					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
+				],
+				"phpunit": [
+					"BlocksSharedStateTest"
+				]
+			}
+		}
+	]
+}

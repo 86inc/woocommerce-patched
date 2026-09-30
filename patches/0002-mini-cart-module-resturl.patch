@@ -1,0 +1,159 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+index ecc49ad6ee2790d07353ac34f31f30c06f985c8a..d15da31aa0519e681d5af307977669e8d060c9c1 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+@@ -1166,6 +1166,19 @@ const { actions } = store< Store >(
+ 			},
+ 
+ 			*refreshCartItems(): AsyncAction< void > {
++				// Skip when the server did not provide the interactivity
++				// state this store needs, e.g. when a block imports this
++				// store without loading the shared cart state. Release
++				// pending mutations so they fail visibly instead of
++				// waiting forever for a nonce that will never arrive.
++				if ( ! state.restUrl ) {
++					if ( resolveNonceReady ) {
++						resolveNonceReady();
++						resolveNonceReady = null;
++					}
++					return;
++				}
++
+ 				// Skip if queue is processing - it will apply server state when done
+ 				if ( cartQueue?.getStatus().isProcessing ) {
+ 					return;
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+index b12b68a78b88c4e744ab7a8dfdc8e382aac122e4..82f036389a3821caaddcd3b2b8968a68151cf0ae 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+@@ -88,7 +88,6 @@ async function runAction( action: unknown ): Promise< unknown > {
+ 	let next = iterator.next();
+ 	while ( ! next.done ) {
+ 		try {
+-			// eslint-disable-next-line no-await-in-loop
+ 			const resolved = await next.value;
+ 			next = iterator.next( resolved );
+ 		} catch ( error ) {
+@@ -530,6 +529,52 @@ describe( 'WooCommerce Cart Interactivity API Store', () => {
+ 		);
+ 	} );
+ 
++	describe( 'refreshCartItems without restUrl in the interactivity state', () => {
++		const originalRestUrl = mockState.restUrl;
++
++		afterEach( () => {
++			mockState.restUrl = originalRestUrl;
++		} );
++
++		it( 'skips the cart fetch instead of requesting a malformed URL', async () => {
++			mockState.restUrl = '';
++			const mockFetch = jest.fn();
++			global.fetch = mockFetch;
++
++			jest.isolateModules( () => require( '../cart' ) );
++			await runAction( mockRegisteredStore?.actions.refreshCartItems() );
++
++			expect( mockFetch ).not.toHaveBeenCalled();
++		} );
++
++		it( 'lets a queued mutation settle instead of waiting forever for a nonce', async () => {
++			mockState.restUrl = '';
++			global.fetch = jest
++				.fn()
++				.mockRejectedValue( new TypeError( 'Failed to fetch' ) );
++
++			jest.isolateModules( () => require( '../cart' ) );
++			const actions = mockRegisteredStore?.actions as Store[ 'actions' ];
++			await runAction( actions.refreshCartItems() );
++			seedCart( [] );
++
++			const outcome = await Promise.race( [
++				runAction(
++					actions.addCartItem( {
++						id: 42,
++						quantityToAdd: 1,
++						type: 'simple',
++					} )
++				).then( () => 'settled' ),
++				new Promise( ( resolve ) =>
++					setTimeout( () => resolve( 'pending' ), 500 )
++				),
++			] );
++
++			expect( outcome ).toBe( 'settled' );
++		} );
++	} );
++
+ 	describe( 'addCartItem endpoint selection', () => {
+ 		it( 'issues add-item (never update-item) for a keyless add that matches a keyed line by product id', async () => {
+ 			const captured = mockBatchFetch();
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/block.json b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/block.json
+index ffaf4f8ad7e8ddee998f269bcf98785bc82cc26c..921d26030cbb64a9fce61f77f405a1212c8574df 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/block.json
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/block.json
+@@ -7,7 +7,6 @@
+ 	"category": "woocommerce",
+ 	"keywords": [ "WooCommerce" ],
+ 	"textdomain": "woocommerce",
+-	"viewScriptModule": "woocommerce/mini-cart",
+ 	"style": "file:../woocommerce/mini-cart-style.css",
+ 	"editorStyle": "file:../woocommerce/mini-cart-editor.css",
+ 	"supports": {
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
+index 2f980028ab0390fd6c278b4b92988499af42f386..334b527f537a50f2eace07b6b9e65e3513c2cd63 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
+@@ -278,6 +278,8 @@ class MiniCart extends AbstractBlock {
+ 			return $content . $this->get_markup( MiniCartUtils::migrate_attributes_to_color_panel( $attributes ) );
+ 		}
+ 
++		// The view script module is deliberately not declared in block.json, so it is only
++		// enqueued here and never on the cart and checkout pages handled above.
+ 		wp_enqueue_script_module( $this->get_full_block_name() );
+ 
+ 		// Enqueue all integration scripts registered for this block.
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCart.php b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCart.php
+index 17fcba41ea695e755ed31681cbc77ff80f8acef7..400cc6fbb6681ca6cb99d6c67165dd40d0e961e0 100644
+--- a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCart.php
++++ b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCart.php
+@@ -518,4 +518,40 @@ class MiniCart extends \WP_UnitTestCase {
+ 		update_option( 'woocommerce_coming_soon', 'no' );
+ 		update_option( 'woocommerce_store_pages_only', 'no' );
+ 	}
++
++	/**
++	 * @testdox Should not enqueue the view script module when rendered on the cart or checkout page.
++	 *
++	 * @testWith [ "woocommerce_is_cart" ]
++	 *           [ "woocommerce_is_checkout" ]
++	 *
++	 * @param string $page_filter Conditional filter forcing the cart or checkout context.
++	 */
++	public function test_view_script_module_is_not_enqueued_on_cart_and_checkout_pages( string $page_filter ): void {
++		wp_dequeue_script_module( 'woocommerce/mini-cart' );
++		add_filter( $page_filter, '__return_true' );
++
++		$block = parse_blocks( '<!-- wp:woocommerce/mini-cart /-->' );
++		render_block( $block[0] );
++
++		$this->assertNotContains( 'woocommerce/mini-cart', $this->get_enqueued_script_module_ids(), 'View script module should not be enqueued on the cart and checkout pages.' );
++	}
++
++	/**
++	 * @testdox Should not declare a view script module so WordPress never enqueues it automatically.
++	 */
++	public function test_view_script_module_is_not_declared_on_the_block_type(): void {
++		$block_type = \WP_Block_Type_Registry::get_instance()->get_registered( 'woocommerce/mini-cart' );
++
++		$this->assertSame( array(), $block_type->view_script_module_ids, 'The view script module must only be enqueued explicitly from render().' );
++	}
++
++	/**
++	 * Return the identifiers of the currently enqueued script modules.
++	 *
++	 * @return string[]
++	 */
++	private function get_enqueued_script_module_ids(): array {
++		return wp_script_modules()->get_queue();
++	}
+ }

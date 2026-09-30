@@ -1,0 +1,1451 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/skeleton/patterns/checkout/index.tsx b/plugins/woocommerce/client/blocks/assets/js/base/components/skeleton/patterns/checkout/index.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddfe25eea2b
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/skeleton/patterns/checkout/index.tsx
+@@ -0,0 +1,48 @@
++/**
++ * External dependencies
++ */
++import { __ } from '@wordpress/i18n';
++import { Main, Sidebar } from '@woocommerce/base-components/sidebar-layout';
++
++/**
++ * Internal dependencies
++ */
++import { Skeleton } from '../..';
++import { CartLineItemsCheckoutSkeleton } from '../cart-line-items';
++import { CheckoutShippingSkeleton } from '../checkout-shipping';
++import { CheckoutPaymentSkeleton } from '../checkout-payment';
++
++const FieldGroupSkeleton = ( { fields = 3 }: { fields?: number } ) => (
++	<>
++		<Skeleton height="20px" maxWidth="180px" />
++		{ Array.from( { length: fields } ).map( ( _, index ) => (
++			<Skeleton key={ index } height="48px" />
++		) ) }
++	</>
++);
++
++/**
++ * Placeholder shown while checkout data is fetched on the client.
++ */
++export const CheckoutSkeleton = () => {
++	return (
++		<>
++			<Main className="wc-block-checkout__main">
++				<div
++					className="wc-block-components-skeleton wc-block-components-skeleton--checkout"
++					aria-live="polite"
++					aria-label={ __( 'Loading checkout…', 'woocommerce' ) }
++				>
++					<FieldGroupSkeleton fields={ 1 } />
++					<FieldGroupSkeleton fields={ 4 } />
++					<FieldGroupSkeleton fields={ 2 } />
++				</div>
++			</Main>
++			<Sidebar className="wc-block-checkout__sidebar">
++				<CartLineItemsCheckoutSkeleton />
++				<CheckoutShippingSkeleton />
++				<CheckoutPaymentSkeleton />
++			</Sidebar>
++		</>
++	);
++};
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60ef5ef542b 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+@@ -482,6 +482,58 @@ function preloadA11y(): void {
+ 		} );
+ }
+ 
++/**
++ * Mirrors IAPI cart fetches into the @wordpress/data cart store so a single
++ * GET /cart hydrates both and the Redux resolver short-circuits. Reads the
++ * global `wp.data` because this script module can't import it directly.
++ */
++const pushCartToReduxStore = ( cart: Cart ): void => {
++	const data = (
++		window as unknown as {
++			wp?: {
++				data?: {
++					dispatch: ( key: string ) => {
++						receiveCart?: ( cart: Cart ) => void;
++						finishResolution?: ( name: string ) => void;
++					};
++				};
++			};
++		}
++	 ).wp?.data;
++	if ( ! data ) {
++		return;
++	}
++	try {
++		const cartDispatch = data.dispatch( 'wc/store/cart' );
++		cartDispatch.receiveCart?.( cart );
++		cartDispatch.finishResolution?.( 'getCartData' );
++		( window as { wcIapiCartHydrated?: boolean } ).wcIapiCartHydrated =
++			true;
++	} catch {}
++};
++
++/**
++ * Mirrors the fresh Store API nonce from IAPI fetch responses into the
++ * apiFetch nonce middleware used by the React cart/checkout blocks, so
++ * mutations don't start from a stale nonce when the IAPI fetch is the only
++ * request on page load. `setNonce` is monkey-patched onto apiFetch by
++ * middleware/store-api-nonce.
++ */
++const pushNonceToApiFetchMiddleware = ( headers: Headers ): void => {
++	const apiFetch = (
++		window as unknown as {
++			wp?: {
++				apiFetch?: {
++					setNonce?: ( headers: Headers ) => void;
++				};
++			};
++		}
++	 ).wp?.apiFetch;
++	try {
++		apiFetch?.setNonce?.( headers );
++	} catch {}
++};
++
+ /**
+  * Cart request queue singleton
+  *
+@@ -513,11 +565,13 @@ async function sendCartRequest(
+ 			},
+ 			commit: ( serverState ) => {
+ 				stateRef.cart = serverState;
++				pushCartToReduxStore( serverState );
+ 			},
+ 			fetchHandler: async ( ...args ) => {
+ 				const response = await fetch( ...args );
+ 				stateRef.nonce =
+ 					response.headers.get( 'Nonce' ) || stateRef.nonce;
++				pushNonceToApiFetchMiddleware( response.headers );
+ 				return response;
+ 			},
+ 			// The single place that emits the cart's cross-cutting side
+@@ -588,6 +642,7 @@ const universalLock =
+ 
+ // Todo: export this store once the store is public.
+ const { state } = store< Store >( 'woocommerce', {}, { lock: universalLock } );
++
+ const { actions } = store< Store >(
+ 	'woocommerce',
+ 	{
+@@ -1185,7 +1240,9 @@ const { actions } = store< Store >(
+ 				}
+ 
+ 				// Skips if there's a pending request.
+-				if ( pendingRefresh ) return;
++				if ( pendingRefresh ) {
++					return;
++				}
+ 
+ 				pendingRefresh = true;
+ 
+@@ -1201,6 +1258,7 @@ const { actions } = store< Store >(
+ 
+ 					// Extract fresh nonce from response headers.
+ 					state.nonce = res.headers.get( 'Nonce' ) || state.nonce;
++					pushNonceToApiFetchMiddleware( res.headers );
+ 
+ 					if ( resolveNonceReady ) {
+ 						resolveNonceReady();
+@@ -1210,8 +1268,9 @@ const { actions } = store< Store >(
+ 					const json = ( yield res.json() ) as Cart;
+ 
+ 					// Checks if the response contains an error.
+-					if ( isApiErrorResponse( res, json ) )
++					if ( isApiErrorResponse( res, json ) ) {
+ 						throw generateError( json );
++					}
+ 
+ 					// If the batcher started a cycle while we were fetching,
+ 					// discard this response — the batcher will reconcile.
+@@ -1222,6 +1281,8 @@ const { actions } = store< Store >(
+ 					// Updates the local cart.
+ 					state.cart = json;
+ 
++					pushCartToReduxStore( json );
++
+ 					// Resets the timeout.
+ 					refreshTimeout = 3000;
+ 				} catch ( error ) {
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx
+index 1d8a76d4e762cf8a27676c83711a25720279f9c5..c988f3ff78cc31a98095d7c935fe3fd589b9a785 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx
+@@ -18,6 +18,7 @@ import withScrollToTop from '@woocommerce/base-hocs/with-scroll-to-top';
+ import { useDispatch, useSelect } from '@wordpress/data';
+ import { checkoutStore, validationStore } from '@woocommerce/block-data';
+ import type { CheckoutResponse } from '@woocommerce/types';
++import { CheckoutSkeleton } from '@woocommerce/base-components/skeleton/patterns/checkout';
+ 
+ /**
+  * Internal dependencies
+@@ -36,6 +37,9 @@ const preloadedCheckoutData = getSetting< Partial< CheckoutResponse > >(
+ 	{}
+ );
+ const hasCheckoutError = !! preloadedCheckoutData.code;
++// When the page is server-hydrated the checkout payload is preloaded;
++// otherwise it is empty and fetched on the client.
++const isCheckoutHydrated = Object.keys( preloadedCheckoutData ).length > 0;
+ 
+ const MustLoginPrompt = () => {
+ 	return (
+@@ -55,16 +59,28 @@ const Checkout = ( {
+ 	attributes: Attributes;
+ 	children: React.ReactChildren;
+ } ): JSX.Element => {
+-	const { customerId } = useSelect( ( select ) => {
++	const { customerId, checkoutIsResolving } = useSelect( ( select ) => {
+ 		const store = select( checkoutStore );
++		// Selecting getCheckoutData triggers its resolver, which fetches the
++		// checkout payload on non-hydrated pages.
++		const checkoutData = store.getCheckoutData();
++		const hasStarted = store.hasStartedResolution( 'getCheckoutData' );
++		const hasFinished = store.hasFinishedResolution( 'getCheckoutData' );
+ 		return {
+-			customerId: store.getCustomerId(),
++			customerId: checkoutData.customerId,
++			checkoutIsResolving: hasStarted && ! hasFinished,
+ 		};
+ 	} );
+ 	const { cartItems, cartIsLoading } = useStoreCart();
+ 
+ 	const { showFormStepNumbers } = attributes;
+ 
++	// Only gate rendering on a non-hydrated page, where the checkout payload
++	// is still being fetched. Hydrated pages render immediately.
++	if ( ! isCheckoutHydrated && ( cartIsLoading || checkoutIsResolving ) ) {
++		return <CheckoutSkeleton />;
++	}
++
+ 	if ( ! cartIsLoading && cartItems.length === 0 ) {
+ 		return <EmptyCart />;
+ 	}
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
+index a0591a882c49f090aa03b0287ba6b4721c8cf750..8cd63514582eb12923fa18691898d0c235473ec1 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
+@@ -2,13 +2,14 @@
+  * External dependencies
+  */
+ import apiFetch from '@wordpress/api-fetch';
++import { select } from '@wordpress/data';
+ import { CartResponse } from '@woocommerce/types';
+ import { previewCart } from '@woocommerce/resource-previews';
+ 
+ /**
+  * Internal dependencies
+  */
+-import { CART_API_ERROR } from './constants';
++import { CART_API_ERROR, STORE_KEY } from './constants';
+ import type { CartDispatchFromMap, CartResolveSelectFromMap } from './index';
+ import { setTriggerStoreSyncEvent } from './utils';
+ import { isEditor } from '../utils';
+@@ -24,6 +25,16 @@ export const getCartData =
+ 			return;
+ 		}
+ 
++		// Skip when the IAPI cart store already pushed cart data into this
++		// store — a single GET /cart hydrates both.
++		if (
++			( window as { wcIapiCartHydrated?: boolean } )
++				.wcIapiCartHydrated &&
++			select( STORE_KEY ).getCartData().items.length > 0
++		) {
++			return;
++		}
++
+ 		const response = await apiFetch< Response >( {
+ 			path: '/wc/store/v1/cart',
+ 			method: 'GET',
+@@ -39,6 +50,14 @@ export const getCartData =
+ 			apiFetch.setCartHash( response?.headers );
+ 		}
+ 
++		if (
++			// @ts-expect-error setNonce is monkey patched in middleware/store-api-nonce
++			typeof apiFetch.setNonce === 'function'
++		) {
++			// @ts-expect-error setNonce is monkey patched in middleware/store-api-nonce
++			apiFetch.setNonce( response?.headers );
++		}
++
+ 		try {
+ 			const cartData: CartResponse = await response.json();
+ 			const { receiveCart, receiveError } = dispatch;
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
+index 07aa74d3319327f371716d1b636b26bf04356dc7..fd5ca5a66a64dfc2b322a818634e00ca1e454f3f 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
+@@ -1,5 +1,6 @@
+ export const ACTION_TYPES = {
+ 	ADD_ADDRESS_AUTOCOMPLETE_PROVIDER: 'ADD_ADDRESS_AUTOCOMPLETE_PROVIDER',
++	RECEIVE_CHECKOUT_DATA: 'RECEIVE_CHECKOUT_DATA',
+ 	SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER:
+ 		'SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER',
+ 	DECREMENT_CALCULATING: 'DECREMENT_CALCULATING',
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
+index e84dedb29a6663b3617f4ce00df76c2493d587e5..41efeda74effaf82b7c15abfa10166d33a5c4edf 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
+@@ -2,6 +2,7 @@
+  * External dependencies
+  */
+ import type { AddressFormType, OrderFormValues } from '@woocommerce/settings';
++import type { CheckoutResponseSuccess } from '@woocommerce/types';
+ import deprecated from '@wordpress/deprecated';
+ 
+ /**
+@@ -116,6 +117,18 @@ export const __internalDecrementCalculating = () => {
+ 	};
+ };
+ 
++/**
++ * Receive checkout data from API
++ *
++ * @param checkoutData Checkout data from the API response
++ */
++export const receiveCheckoutData = (
++	checkoutData: CheckoutResponseSuccess
++) => ( {
++	type: types.RECEIVE_CHECKOUT_DATA,
++	checkoutData,
++} );
++
+ /**
+  * Set the customer id
+  *
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
+index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e42d07e11 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
+@@ -9,6 +9,7 @@ import { createReduxStore, register, subscribe } from '@wordpress/data';
+ import { STORE_KEY } from './constants';
+ import * as selectors from './selectors';
+ import * as actions from './actions';
++import * as resolvers from './resolvers';
+ import reducer from './reducers';
+ import { pushChanges } from './push-changes';
+ 
+@@ -16,6 +17,7 @@ export const config = {
+ 	reducer,
+ 	selectors,
+ 	actions,
++	resolvers,
+ 	__experimentalUseThunks: true,
+ };
+ 
+@@ -23,6 +25,8 @@ export const store = createReduxStore( STORE_KEY, config );
+ register( store );
+ export type CheckoutStoreDescriptor = typeof store;
+ 
++export type CheckoutDispatchFromMap = typeof actions;
++
+ subscribe( pushChanges, store );
+ 
+ export const CHECKOUT_STORE_KEY = STORE_KEY;
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
+index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9ee8efb149 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
+@@ -2,6 +2,7 @@
+  * External dependencies
+  */
+ import type { Reducer } from 'redux';
++import { isSameAddress } from '@woocommerce/base-utils';
+ 
+ /**
+  * Internal dependencies
+@@ -95,6 +96,53 @@ const reducer: Reducer< CheckoutState > = ( state = defaultState, action ) => {
+ 			};
+ 			break;
+ 
++		case types.RECEIVE_CHECKOUT_DATA:
++			if ( action.checkoutData ) {
++				const hasBillingAddress = !! (
++					action.checkoutData.billing_address?.address_1 &&
++					( action.checkoutData.billing_address?.first_name ||
++						action.checkoutData.billing_address?.last_name )
++				);
++
++				const hasShippingAddress = !! (
++					action.checkoutData.shipping_address?.address_1 &&
++					( action.checkoutData.shipping_address?.first_name ||
++						action.checkoutData.shipping_address?.last_name )
++				);
++
++				const billingMatchesShipping =
++					action.checkoutData.billing_address &&
++					action.checkoutData.shipping_address
++						? isSameAddress(
++								action.checkoutData.billing_address,
++								action.checkoutData.shipping_address
++						  )
++						: state.useShippingAsBilling;
++
++				newState = {
++					...state,
++					orderId: action.checkoutData.order_id || state.orderId,
++					customerId:
++						action.checkoutData.customer_id || state.customerId,
++					orderNotes:
++						action.checkoutData.customer_note || state.orderNotes,
++					additionalFields: {
++						...state.additionalFields,
++					},
++					useShippingAsBilling:
++						hasBillingAddress || hasShippingAddress
++							? billingMatchesShipping
++							: state.useShippingAsBilling,
++					editingBillingAddress: hasBillingAddress
++						? false
++						: state.editingBillingAddress,
++					editingShippingAddress: hasShippingAddress
++						? false
++						: state.editingShippingAddress,
++				};
++			}
++			break;
++
+ 		case types.SET_CUSTOMER_ID:
+ 			if ( action.customerId !== undefined ) {
+ 				newState = {
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2d072c19506bb96d3723370d8edfbff2ad54596
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
+@@ -0,0 +1,101 @@
++/**
++ * External dependencies
++ */
++import apiFetch from '@wordpress/api-fetch';
++import { dispatch } from '@wordpress/data';
++import type {
++	ApiErrorResponse,
++	CartResponse,
++	CheckoutResponseSuccess,
++} from '@woocommerce/types';
++
++/**
++ * Internal dependencies
++ */
++import { isEditor } from '../utils/is-editor';
++import { processErrorResponse } from '../utils';
++import { STORE_KEY } from './constants';
++import { CART_STORE_KEY } from '../cart';
++import type { CheckoutDispatchFromMap } from './index';
++
++/**
++ * Proper cookie-name match (avoids substring false positives from `includes`).
++ */
++const hasCartHashCookie = (): boolean =>
++	document.cookie
++		.split( ';' )
++		.some( ( cookie ) =>
++			cookie.trim().startsWith( 'woocommerce_cart_hash=' )
++		);
++
++const previewCheckoutData: CheckoutResponseSuccess = {
++	order_id: 1,
++	customer_id: 0,
++	billing_address: {} as CheckoutResponseSuccess[ 'billing_address' ],
++	shipping_address: {} as CheckoutResponseSuccess[ 'shipping_address' ],
++	customer_note: '',
++	extensions: {},
++	order_key: '',
++	payment_method: '',
++	payment_result: {
++		payment_details: {},
++		payment_status: 'success',
++		redirect_url: '',
++	},
++	status: 'draft',
++};
++
++/**
++ * Resolver for checkout data. Skipped when state is already hydrated.
++ */
++export const getCheckoutData =
++	() =>
++	async ( {
++		dispatch: checkoutDispatch,
++		select,
++	}: {
++		dispatch: CheckoutDispatchFromMap;
++		select: ( key: typeof STORE_KEY ) => {
++			getOrderId: () => number;
++		};
++	} ) => {
++		if ( isEditor() ) {
++			checkoutDispatch.receiveCheckoutData( previewCheckoutData );
++			return;
++		}
++
++		if ( select( STORE_KEY ).getOrderId() > 0 ) {
++			return;
++		}
++
++		if ( ! hasCartHashCookie() ) {
++			return;
++		}
++
++		try {
++			const response = await apiFetch<
++				CheckoutResponseSuccess & {
++					// eslint-disable-next-line @typescript-eslint/naming-convention -- experimental Store API response field.
++					__experimentalCart?: CartResponse;
++				}
++			>( {
++				path: '/wc/store/v1/checkout?__experimental_calc_totals=true',
++				method: 'GET',
++				cache: 'no-store',
++			} );
++
++			if ( response ) {
++				checkoutDispatch.receiveCheckoutData( response );
++
++				if ( response.__experimentalCart ) {
++					dispatch( CART_STORE_KEY ).receiveCartContents(
++						response.__experimentalCart
++					);
++				}
++			}
++		} catch ( error ) {
++			// eslint-disable-next-line no-console
++			console.error( 'Checkout data fetch failed:', error );
++			processErrorResponse( error as ApiErrorResponse );
++		}
++	};
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
+index eec2a61a3a984f3ceef540530a439ad8d8e530bf..41a401aeb26c908b98fcfc75444de2ac6b9ba70c 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
+@@ -1,10 +1,10 @@
+ /**
+  * External dependencies
+  */
+-import { select } from '@wordpress/data';
++import { createSelector, select } from '@wordpress/data';
+ import { hasCollectableRate } from '@woocommerce/base-utils';
+ import { isString, objectHasProp } from '@woocommerce/types';
+-import type { AddressFormType } from '@woocommerce/settings';
++import { getSetting, type AddressFormType } from '@woocommerce/settings';
+ 
+ /**
+  * Internal dependencies
+@@ -13,6 +13,43 @@ import { STATUS } from './constants';
+ import { CheckoutState } from './default-state';
+ import { STORE_KEY as cartStoreKey } from '../cart/constants';
+ 
++/**
++ * Returns the core subset of checkout state. Pairs with the `getCheckoutData`
++ * resolver, which fetches the full checkout payload from the Store API when
++ * the page is not server-hydrated.
++ */
++export const getCheckoutData = createSelector(
++	( state: CheckoutState ) => {
++		return {
++			orderId: state.orderId,
++			customerId: state.customerId,
++			orderNotes: state.orderNotes,
++			additionalFields: state.additionalFields,
++		};
++	},
++	( state: CheckoutState ) => [
++		state.orderId,
++		state.customerId,
++		state.orderNotes,
++		state.additionalFields,
++	]
++);
++
++/**
++ * Whether the checkout payload was server-hydrated.
++ *
++ * Returns `false` when the checkout data is fetched on the client instead.
++ * Extensions (payment gateways, custom fields) can read this to defer
++ * rendering per-user UI until the client-side data has loaded.
++ */
++export const isCheckoutDataHydrated = (): boolean => {
++	return (
++		Object.keys(
++			getSetting< Record< string, unknown > >( 'checkoutData', {} )
++		).length > 0
++	);
++};
++
+ export const getCustomerId = ( state: CheckoutState ) => {
+ 	return state.customerId;
+ };
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
+index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d460ca8d9 100644
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
+@@ -1,3 +1,8 @@
++/**
++ * External dependencies
++ */
++import type { CheckoutResponseSuccess } from '@woocommerce/types';
++
+ /**
+  * Internal dependencies
+  */
+@@ -6,6 +11,19 @@ import { defaultState } from '../default-state';
+ import { STATUS } from '../constants';
+ import * as actions from '../actions';
+ 
++const makeCheckoutData = (
++	overrides: Partial< CheckoutResponseSuccess > = {}
++): CheckoutResponseSuccess =>
++	( {
++		order_id: 0,
++		customer_id: 0,
++		customer_note: '',
++		billing_address: {},
++		shipping_address: {},
++		additional_fields: {},
++		...overrides,
++	} ) as unknown as CheckoutResponseSuccess;
++
+ describe( 'Checkout Store Reducer', () => {
+ 	it( 'should return the initial state', () => {
+ 		expect( reducer( undefined, {} ) ).toEqual( defaultState );
+@@ -577,4 +595,110 @@ describe( 'Checkout Store Reducer', () => {
+ 			).toEqual( expectedState );
+ 		} );
+ 	} );
++
++	describe( 'should handle RECEIVE_CHECKOUT_DATA', () => {
++		it( 'should populate identifiers from the payload', () => {
++			const state = reducer(
++				defaultState,
++				actions.receiveCheckoutData(
++					makeCheckoutData( {
++						order_id: 42,
++						customer_id: 7,
++						customer_note: 'Leave at door',
++					} )
++				)
++			);
++
++			expect( state.orderId ).toBe( 42 );
++			expect( state.customerId ).toBe( 7 );
++			expect( state.orderNotes ).toBe( 'Leave at door' );
++		} );
++
++		it( 'should not clobber existing identifiers with empty values', () => {
++			const initialState = {
++				...defaultState,
++				orderId: 99,
++				customerId: 5,
++				orderNotes: 'Existing note',
++			};
++
++			const state = reducer(
++				initialState,
++				actions.receiveCheckoutData( makeCheckoutData() )
++			);
++
++			expect( state.orderId ).toBe( 99 );
++			expect( state.customerId ).toBe( 5 );
++			expect( state.orderNotes ).toBe( 'Existing note' );
++		} );
++
++		it( 'should not enter edit mode when addresses are absent', () => {
++			const state = reducer(
++				defaultState,
++				actions.receiveCheckoutData( makeCheckoutData() )
++			);
++
++			expect( state.editingBillingAddress ).toBe(
++				defaultState.editingBillingAddress
++			);
++			expect( state.editingShippingAddress ).toBe(
++				defaultState.editingShippingAddress
++			);
++			expect( state.useShippingAsBilling ).toBe(
++				defaultState.useShippingAsBilling
++			);
++		} );
++
++		it( 'should leave edit mode when a complete address is present', () => {
++			const initialState = {
++				...defaultState,
++				editingBillingAddress: true,
++				editingShippingAddress: true,
++			};
++
++			const address = {
++				first_name: 'Jane',
++				last_name: 'Doe',
++				address_1: '123 Main St',
++			};
++
++			const state = reducer(
++				initialState,
++				actions.receiveCheckoutData(
++					makeCheckoutData( {
++						billing_address:
++							address as CheckoutResponseSuccess[ 'billing_address' ],
++						shipping_address:
++							address as CheckoutResponseSuccess[ 'shipping_address' ],
++					} )
++				)
++			);
++
++			expect( state.editingBillingAddress ).toBe( false );
++			expect( state.editingShippingAddress ).toBe( false );
++			expect( state.useShippingAsBilling ).toBe( true );
++		} );
++
++		it( 'should not throw and should preserve useShippingAsBilling when addresses are undefined', () => {
++			const initialState = {
++				...defaultState,
++				useShippingAsBilling: false,
++			};
++
++			const payload = makeCheckoutData();
++			// Simulate a payload missing address objects entirely.
++			delete ( payload as Record< string, unknown > ).billing_address;
++			delete ( payload as Record< string, unknown > ).shipping_address;
++
++			let state;
++			expect( () => {
++				state = reducer(
++					initialState,
++					actions.receiveCheckoutData( payload )
++				);
++			} ).not.toThrow();
++
++			expect( state ).toMatchObject( { useShippingAsBilling: false } );
++		} );
++	} );
+ } );
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d483cc5c37
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
+@@ -0,0 +1,136 @@
++/**
++ * External dependencies
++ */
++import apiFetch from '@wordpress/api-fetch';
++
++/**
++ * Internal dependencies
++ */
++import { getCheckoutData } from '../resolvers';
++import { isEditor } from '../../utils/is-editor';
++import { processErrorResponse } from '../../utils';
++
++jest.mock( '@wordpress/data-controls' );
++jest.mock( '@wordpress/api-fetch' );
++
++jest.mock( '../../utils/is-editor', () => ( {
++	isEditor: jest.fn( () => false ),
++} ) );
++
++jest.mock( '../../utils', () => ( {
++	processErrorResponse: jest.fn(),
++} ) );
++
++const mockReceiveCartContents = jest.fn();
++jest.mock( '@wordpress/data', () => ( {
++	dispatch: jest.fn( () => ( {
++		receiveCartContents: mockReceiveCartContents,
++	} ) ),
++} ) );
++
++jest.mock( '../../cart', () => ( {
++	CART_STORE_KEY: 'wc/store/cart',
++} ) );
++
++const setCartHashCookie = ( present: boolean ) => {
++	if ( present ) {
++		document.cookie = 'woocommerce_cart_hash=abc123';
++	} else {
++		document.cookie =
++			'woocommerce_cart_hash=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
++	}
++};
++
++const makeDispatch = () => ( {
++	receiveCheckoutData: jest.fn(),
++} );
++
++const makeSelect = ( orderId: number ) => () => ( {
++	getOrderId: () => orderId,
++} );
++
++describe( 'getCheckoutData resolver', () => {
++	beforeEach( () => {
++		jest.clearAllMocks();
++		setCartHashCookie( true );
++		( isEditor as jest.Mock ).mockReturnValue( false );
++	} );
++
++	it( 'dispatches preview data and skips the request in the editor', async () => {
++		( isEditor as jest.Mock ).mockReturnValue( true );
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 0 ),
++		} );
++
++		expect( dispatch.receiveCheckoutData ).toHaveBeenCalledTimes( 1 );
++		expect( apiFetch ).not.toHaveBeenCalled();
++	} );
++
++	it( 'skips the request when an order is already hydrated', async () => {
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 5 ),
++		} );
++
++		expect( apiFetch ).not.toHaveBeenCalled();
++		expect( dispatch.receiveCheckoutData ).not.toHaveBeenCalled();
++	} );
++
++	it( 'skips the request when the cart hash cookie is absent', async () => {
++		setCartHashCookie( false );
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 0 ),
++		} );
++
++		expect( apiFetch ).not.toHaveBeenCalled();
++		expect( dispatch.receiveCheckoutData ).not.toHaveBeenCalled();
++	} );
++
++	it( 'receives checkout data and pushes the experimental cart to the cart store', async () => {
++		const response = {
++			order_id: 0,
++			customer_id: 0,
++			__experimentalCart: { items: [], totals: {} },
++		};
++		( apiFetch as unknown as jest.Mock ).mockResolvedValue( response );
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 0 ),
++		} );
++
++		expect( dispatch.receiveCheckoutData ).toHaveBeenCalledWith( response );
++		expect( mockReceiveCartContents ).toHaveBeenCalledWith(
++			response.__experimentalCart
++		);
++	} );
++
++	it( 'routes fetch failures through processErrorResponse', async () => {
++		const error = { code: 'boom', message: 'Boom' };
++		( apiFetch as unknown as jest.Mock ).mockRejectedValue( error );
++		const dispatch = makeDispatch();
++
++		await getCheckoutData()( {
++			// @ts-expect-error partial dispatch for test
++			dispatch,
++			select: makeSelect( 0 ),
++		} );
++
++		expect( processErrorResponse ).toHaveBeenCalledWith( error );
++		expect( dispatch.receiveCheckoutData ).not.toHaveBeenCalled();
++		expect( console ).toHaveErrored();
++	} );
++} );
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
+index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..7ee3cbd0ffc9540624f4792466392ffc37f6162c 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
+@@ -1,6 +1,7 @@
+ <?php
+ namespace Automattic\WooCommerce\Blocks\BlockTypes;
+ 
++use Automattic\WooCommerce\Blocks\Utils\BlocksSharedState;
+ use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
+ use Automattic\WooCommerce\Enums\TaxDisplayMode;
+ 
+@@ -275,9 +276,12 @@ class Cart extends AbstractBlock {
+ 			}
+ 		}
+ 
+-		// Hydrate the following data depending on admin or frontend context.
+ 		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
+-			$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
++			$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );
++
++			if ( $should_hydrate ) {
++				$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
++			}
+ 		}
+ 
+ 		/**
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php b/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
+index 5d48876aaf4f80d0e7ad9d7413d5b59b0b508b11..8078b70c5837748e925c66d4fcee023871bfce7a 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
+@@ -4,6 +4,7 @@ namespace Automattic\WooCommerce\Blocks\BlockTypes;
+ 
+ use Automattic\Block_Scanner;
+ use Automattic\WooCommerce\StoreApi\Utilities\LocalPickupUtils;
++use Automattic\WooCommerce\Blocks\Utils\BlocksSharedState;
+ use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
+ use Automattic\WooCommerce\Blocks\Domain\Services\CheckoutFields;
+ use Automattic\WooCommerce\Blocks\Package;
+@@ -577,9 +578,13 @@ class Checkout extends AbstractBlock {
+ 		}
+ 
+ 		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
+-			$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
+-			$this->asset_data_registry->hydrate_data_from_api_request( 'checkoutData', '/wc/store/v1/checkout' );
+-			$this->hydrate_customer_payment_methods();
++			$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );
++
++			if ( $should_hydrate ) {
++				$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
++				$this->asset_data_registry->hydrate_data_from_api_request( 'checkoutData', '/wc/store/v1/checkout' );
++				$this->hydrate_customer_payment_methods();
++			}
+ 		}
+ 
+ 		/**
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
+index 15f592221a9193b1529ce2d581f8774918f01d55..2358593bdcbb339b903889b9678273753e46327d 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
+@@ -307,20 +307,29 @@ class MiniCart extends AbstractBlock {
+ 			// Pre-render the template part so nested blocks enqueue their assets before the overlay is printed in wp_footer.
+ 			$template_part_contents           = $this->get_template_part_contents( false );
+ 			$template_part_contents           = do_blocks( $this->process_template_contents( $template_part_contents ) );
+-			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
+ 			$display_cart_price_including_tax = get_option( 'woocommerce_tax_display_cart' ) === TaxDisplayMode::INCLUSIVE;
+-			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
+-			$badge_is_visible                 = ( 'always' === $product_count_visibility ) || ( 'never' !== $product_count_visibility && $cart_item_count > 0 );
+-			$formatted_subtotal               = '';
+-			$html                             = new \WP_HTML_Tag_Processor( wc_price( $cart->get_displayed_subtotal() ) );
+ 			$on_cart_click_behaviour          = isset( $attributes['onCartClickBehaviour'] ) ? $attributes['onCartClickBehaviour'] : 'open_drawer';
+ 
+-			if ( $html->next_tag( 'bdi' ) ) {
+-				while ( $html->next_token() ) {
+-					if ( '#text' === $html->get_token_name() ) {
+-						$formatted_subtotal .= $html->get_modifiable_text();
++			$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );
++
++			if ( $should_hydrate ) {
++				$cart_item_count    = $cart->get_cart_contents_count();
++				$badge_is_visible   = ( 'always' === $product_count_visibility ) || ( 'never' !== $product_count_visibility && $cart_item_count > 0 );
++				$should_show_tax    = $cart->get_cart_contents_tax() > 0;
++				$formatted_subtotal = '';
++				$html               = new \WP_HTML_Tag_Processor( wc_price( $cart->get_displayed_subtotal() ) );
++				if ( $html->next_tag( 'bdi' ) ) {
++					while ( $html->next_token() ) {
++						if ( '#text' === $html->get_token_name() ) {
++							$formatted_subtotal .= $html->get_modifiable_text();
++						}
+ 					}
+ 				}
++			} else {
++				$cart_item_count    = 0;
++				$badge_is_visible   = ( 'always' === $product_count_visibility );
++				$should_show_tax    = false;
++				$formatted_subtotal = '';
+ 			}
+ 
+ 			// The following translation is a temporary workaround. It will be
+@@ -337,7 +346,7 @@ class MiniCart extends AbstractBlock {
+ 				array(
+ 					'isOpen'             => false,
+ 					'totalItemsInCart'   => $cart_item_count,
+-					'shouldShowTaxLabel' => $cart->get_cart_contents_tax() > 0,
++					'shouldShowTaxLabel' => $should_show_tax,
+ 					'badgeIsVisible'     => $badge_is_visible,
+ 					'formattedSubtotal'  => $formatted_subtotal,
+ 					'drawerOverlayClass' => 'wc-block-components-drawer__screen-overlay wc-block-components-drawer__screen-overlay--with-slide-out wc-block-components-drawer__screen-overlay--is-hidden',
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
+index 95d1b68586ad19be34f54f67434ca1a9891c4ca4..6d5e3d6e977db44aef0825524c08f62e5bfcc449 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
+@@ -1,9 +1,9 @@
+ <?php
+ namespace Automattic\WooCommerce\Blocks\BlockTypes;
+ 
++use Automattic\WooCommerce\Blocks\Utils\BlocksSharedState;
+ use Automattic\WooCommerce\Enums\TaxDisplayMode;
+ 
+-
+ /**
+  * MiniCartFooterBlock class.
+  */
+@@ -45,9 +45,7 @@ class MiniCartFooterBlock extends AbstractInnerBlock {
+ 		$subtotal_label                   = __( 'Subtotal', 'woocommerce' );
+ 		$other_costs_label                = $this->get_totals_item_description();
+ 		$display_cart_price_including_tax = get_option( 'woocommerce_tax_display_cart' ) === TaxDisplayMode::INCLUSIVE;
+-		$subtotal                         = $display_cart_price_including_tax ? $cart->get_subtotal_tax() : $cart->get_subtotal();
+ 		$formatted_subtotal               = '';
+-		$html                             = new \WP_HTML_Tag_Processor( wc_price( $subtotal ) );
+ 		$wrapper_attributes               = get_block_wrapper_attributes(
+ 			array(
+ 				'data-wp-interactive' => 'woocommerce/mini-cart-footer-block',
+@@ -55,10 +53,17 @@ class MiniCartFooterBlock extends AbstractInnerBlock {
+ 			)
+ 		);
+ 
+-		if ( $html->next_tag( 'bdi' ) ) {
+-			while ( $html->next_token() ) {
+-				if ( '#text' === $html->get_token_name() ) {
+-						$formatted_subtotal .= $html->get_modifiable_text();
++		$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );
++
++		if ( $should_hydrate && $cart ) {
++			$subtotal = $display_cart_price_including_tax ? $cart->get_subtotal_tax() : $cart->get_subtotal();
++			$html     = new \WP_HTML_Tag_Processor( wc_price( $subtotal ) );
++
++			if ( $html->next_tag( 'bdi' ) ) {
++				while ( $html->next_token() ) {
++					if ( '#text' === $html->get_token_name() ) {
++							$formatted_subtotal .= $html->get_modifiable_text();
++					}
+ 				}
+ 			}
+ 		}
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartTitleItemsCounterBlock.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartTitleItemsCounterBlock.php
+index 9ea61881aa4bdbf8664344b41f6f7b74a8560b54..ba0c1214ac1072aecde2876eab9d234c324d0ab8 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartTitleItemsCounterBlock.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartTitleItemsCounterBlock.php
+@@ -1,6 +1,8 @@
+ <?php
+ namespace Automattic\WooCommerce\Blocks\BlockTypes;
+ 
++use Automattic\WooCommerce\Blocks\Utils\BlocksSharedState;
++
+ /**
+  * MiniCartTitleItemsCounterBlock class.
+  */
+@@ -21,8 +23,10 @@ class MiniCartTitleItemsCounterBlock extends AbstractInnerBlock {
+ 	 * @return string Rendered block type output.
+ 	 */
+ 	protected function render( $attributes, $content, $block ) {
+-		$cart            = $this->get_cart_instance();
+-		$cart_item_count = $cart ? $cart->get_cart_contents_count() : 0;
++		$cart           = $this->get_cart_instance();
++		$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );
++
++		$cart_item_count = ( $should_hydrate && $cart ) ? $cart->get_cart_contents_count() : 0;
+ 
+ 		// The following translation is a temporary workaround. It will be
+ 		// reverted to the previous form `(%d items)` as soon as the
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
+index 29c1f13a92b1582138af89b65f9056057df0e286..62d2d276ee8e9922aa6824d6eb2673d5a99d28b2 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
+@@ -100,7 +100,9 @@ class ProductButton extends AbstractBlock {
+ 
+ 		BlocksSharedState::load_cart_state( 'I acknowledge that using private APIs means my theme or plugin will inevitably break in the next version of WooCommerce' );
+ 
+-		$number_of_items_in_cart  = $this->get_cart_item_quantities_by_product_id( $product->get_id() );
++		$should_hydrate = BlocksSharedState::should_hydrate( 'woocommerce/product-button' );
++
++		$number_of_items_in_cart  = $should_hydrate ? $this->get_cart_item_quantities_by_product_id( $product->get_id() ) : 0;
+ 		$is_product_purchasable   = $this->is_product_purchasable( $product );
+ 		$cart_redirect_after_add  = get_option( 'woocommerce_cart_redirect_after_add' ) === 'yes';
+ 		$ajax_add_to_cart_enabled = get_option( 'woocommerce_enable_ajax_add_to_cart' ) === 'yes';
+diff --git a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php b/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
+index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8e2475c8a 100644
+--- a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
++++ b/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
+@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Blocks\Utils;
+ use InvalidArgumentException;
+ use Automattic\WooCommerce\Blocks\Package;
+ use Automattic\WooCommerce\Blocks\Domain\Services\Hydration;
++use Automattic\WooCommerce\Utilities\HydrationUtil;
+ 
+ /**
+  * Manages the registration of interactivity config and state that is commonly shared by WooCommerce blocks.
+@@ -54,6 +55,22 @@ class BlocksSharedState {
+ 		nocache_headers();
+ 	}
+ 
++	/**
++	 * Whether WooCommerce should hydrate server-rendered output with per-user data.
++	 *
++	 * Thin wrapper around the neutral {@see HydrationUtil::should_hydrate()} so block
++	 * render callbacks keep a Blocks-layer entry point while the decision and the
++	 * `woocommerce_embed_personalized_data` filter live in core.
++	 *
++	 * @since 11.1.0
++	 *
++	 * @param string $store_namespace Optional. Block or IAPI store namespace making the decision.
++	 * @return bool
++	 */
++	public static function should_hydrate( string $store_namespace = '' ): bool {
++		return HydrationUtil::should_hydrate( $store_namespace );
++	}
++
+ 	/**
+ 	 * Check that the consent statement was passed.
+ 	 *
+@@ -102,14 +119,17 @@ class BlocksSharedState {
+ 		if ( null === self::$blocks_shared_cart_state ) {
+ 			$cart_exists       = isset( WC()->cart );
+ 			$cart_has_contents = $cart_exists && ! WC()->cart->is_empty();
+-			if ( $cart_exists ) {
++
++			$should_hydrate = self::should_hydrate( self::$settings_namespace );
++
++			if ( $cart_exists && $should_hydrate ) {
+ 				$cart_response                  = Package::container()->get( Hydration::class )->get_rest_api_response_data( '/wc/store/v1/cart' );
+-				self::$blocks_shared_cart_state = $cart_response['body'] ?? array();
++				self::$blocks_shared_cart_state = $cart_response['body'] ?? self::get_empty_cart_schema();
+ 			} else {
+-				self::$blocks_shared_cart_state = array();
++				self::$blocks_shared_cart_state = self::get_empty_cart_schema();
+ 			}
+ 
+-			if ( $cart_has_contents ) {
++			if ( $cart_has_contents && $should_hydrate ) {
+ 				self::prevent_cache();
+ 			}
+ 
+@@ -129,6 +149,104 @@ class BlocksSharedState {
+ 		}
+ 	}
+ 
++	/**
++	 * Build an empty cart payload matching the Store API cart response schema.
++	 *
++	 * @return array
++	 */
++	private static function get_empty_cart_schema(): array {
++		$currency = self::get_currency_data()['currency'];
++
++		// Mirror the prefix/suffix logic in the Store API CurrencyFormatter so the
++		// empty payload matches a live cart response for every symbol position.
++		$symbol          = $currency['symbol'];
++		$currency_prefix = '';
++		$currency_suffix = '';
++		switch ( $currency['symbolPosition'] ) {
++			case 'left_space':
++				$currency_prefix = $symbol . ' ';
++				break;
++			case 'right':
++				$currency_suffix = $symbol;
++				break;
++			case 'right_space':
++				$currency_suffix = ' ' . $symbol;
++				break;
++			case 'left':
++			default:
++				$currency_prefix = $symbol;
++				break;
++		}
++
++		$empty_totals = array(
++			'total_items'                 => '0',
++			'total_items_tax'             => '0',
++			'total_fees'                  => '0',
++			'total_fees_tax'              => '0',
++			'total_discount'              => '0',
++			'total_discount_tax'          => '0',
++			'total_shipping'              => '0',
++			'total_shipping_tax'          => '0',
++			'total_price'                 => '0',
++			'total_tax'                   => '0',
++			'tax_lines'                   => array(),
++			'currency_code'               => $currency['code'],
++			'currency_symbol'             => $currency['symbol'],
++			'currency_minor_unit'         => $currency['precision'],
++			'currency_decimal_separator'  => $currency['decimalSeparator'],
++			'currency_thousand_separator' => $currency['thousandSeparator'],
++			'currency_prefix'             => $currency_prefix,
++			'currency_suffix'             => $currency_suffix,
++		);
++
++		// Match AbstractAddressSchema: empty-string fields rather than an empty object.
++		$empty_shipping_address = array(
++			'first_name' => '',
++			'last_name'  => '',
++			'company'    => '',
++			'address_1'  => '',
++			'address_2'  => '',
++			'city'       => '',
++			'state'      => '',
++			'postcode'   => '',
++			'country'    => '',
++			'phone'      => '',
++		);
++		$empty_billing_address  = array(
++			'first_name' => '',
++			'last_name'  => '',
++			'company'    => '',
++			'address_1'  => '',
++			'address_2'  => '',
++			'city'       => '',
++			'state'      => '',
++			'postcode'   => '',
++			'country'    => '',
++			'email'      => '',
++			'phone'      => '',
++		);
++
++		return array(
++			'items'                   => array(),
++			'coupons'                 => array(),
++			'fees'                    => array(),
++			'totals'                  => (object) $empty_totals,
++			'shipping_address'        => (object) $empty_shipping_address,
++			'billing_address'         => (object) $empty_billing_address,
++			'needs_payment'           => false,
++			'needs_shipping'          => false,
++			'payment_requirements'    => array(),
++			'has_calculated_shipping' => false,
++			'shipping_rates'          => array(),
++			'items_count'             => 0,
++			'items_weight'            => 0,
++			'cross_sells'             => array(),
++			'errors'                  => array(),
++			'payment_methods'         => array(),
++			'extensions'              => (object) array(),
++		);
++	}
++
+ 	/**
+ 	 * Get currency data to include in settings.
+ 	 *
+diff --git a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
+index c33f1a42451e17939cfb31c9622ece0fdbfc801f..737c2997a19bc2e4d7d6b495e52557a7650a1c4c 100644
+--- a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
++++ b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
+@@ -79,7 +79,12 @@ class Checkout extends AbstractCartRoute {
+ 				'callback'            => [ $this, 'get_response' ],
+ 				'permission_callback' => '__return_true',
+ 				'args'                => [
+-					'context' => $this->get_context_param( [ 'default' => 'view' ] ),
++					'context'                    => $this->get_context_param( [ 'default' => 'view' ] ),
++					'__experimental_calc_totals' => [
++						'description' => __( 'When true, the cart totals are recalculated and the response includes the current cart payload.', 'woocommerce' ),
++						'type'        => 'boolean',
++						'default'     => false,
++					],
+ 				],
+ 			],
+ 			[
+@@ -216,13 +221,18 @@ class Checkout extends AbstractCartRoute {
+ 		if ( $this->order ) {
+ 			$this->create_or_update_draft_order( $request );
+ 
+-			return $this->prepare_item_for_response(
+-				(object) [
+-					'order'          => $this->order,
+-					'payment_result' => new PaymentResult(),
+-				],
+-				$request
+-			);
++			$response = [
++				'order'          => $this->order,
++				'payment_result' => new PaymentResult(),
++			];
++
++			// Clients opt-in to fresh totals and a cart payload via this param, mirroring the PUT flow.
++			if ( true === $request->get_param( '__experimental_calc_totals' ) ) {
++				$this->cart_controller->calculate_totals();
++				$response['cart'] = $this->cart_controller->get_cart_instance();
++			}
++
++			return $this->prepare_item_for_response( (object) $response, $request );
+ 		}
+ 
+ 		return $this->build_draft_route_response( $request );
+diff --git a/plugins/woocommerce/src/Utilities/HydrationUtil.php b/plugins/woocommerce/src/Utilities/HydrationUtil.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..7c188934d1ebf03603034e23ea2bf6b85699c143
+--- /dev/null
++++ b/plugins/woocommerce/src/Utilities/HydrationUtil.php
+@@ -0,0 +1,72 @@
++<?php
++/**
++ * HydrationUtil class file.
++ */
++
++declare( strict_types = 1 );
++
++namespace Automattic\WooCommerce\Utilities;
++
++/**
++ * Neutral home for the decision of whether server-rendered WooCommerce output
++ * should be hydrated with per-user data.
++ *
++ * Lives in the Utilities layer (rather than the Blocks layer) so both core
++ * code and the Blocks rendering layer can consult the same decision and the
++ * same filter without core depending on Blocks.
++ */
++class HydrationUtil {
++
++	/**
++	 * Whether WooCommerce should hydrate server-rendered output with per-user data.
++	 *
++	 * The default is request-aware: hydrate when the response is personalized
++	 * anyway (logged-in user, or a session with a non-empty cart), and emit
++	 * neutral output otherwise. This matches the current behavior of the
++	 * Interactivity API blocks, so out of the box nothing changes; the
++	 * `woocommerce_embed_personalized_data` filter is the opt-in surface for cache
++	 * integrations (CDNs, page caches, hosts) that know the caching policy
++	 * applied to the request.
++	 *
++	 * Returns false when the output should remain cacheable. When false,
++	 * callers should emit neutral, anonymous output and load per-user data on
++	 * the client. Third-party blocks hydrating per-user data can route through
++	 * this method and the `woocommerce_embed_personalized_data` filter to stay
++	 * cache-aware.
++	 *
++	 * @since 11.1.0
++	 *
++	 * @param string $store_namespace Optional. Block or IAPI store namespace making the decision.
++	 * @return bool
++	 */
++	public static function should_hydrate( string $store_namespace = '' ): bool {
++		// Logged-in requests and requests carrying a non-empty cart are
++		// personalized: a cache layer following the documented policy bypasses
++		// them (e.g. on the cart/session cookie), so the HTML reaches the
++		// shopper directly from the origin and benefits from full hydration.
++		$cart    = WC()->cart;
++		$default = is_user_logged_in() || ( $cart instanceof \WC_Cart && ! $cart->is_empty() );
++
++		/**
++		 * Filters whether server-rendered WooCommerce output embeds per-user data.
++		 *
++		 * Return false to keep the output neutral so the response stays safe to
++		 * store in a shared cache; per-user data is then loaded on the client.
++		 * This is a per-block hint honored by blocks that know how to recover
++		 * their data client-side (via the Store API), not a promise that the
++		 * whole page is cacheable. Cache integrations that serve shared
++		 * anonymous HTML regardless of cookies should return false for the
++		 * requests they intend to store.
++		 *
++		 * The `$store_namespace` argument identifies the block or Interactivity
++		 * API store consulting the filter (e.g. `woocommerce/mini-cart`),
++		 * allowing per-block decisions.
++		 *
++		 * @since 11.1.0
++		 *
++		 * @param bool   $default         Default value, true when the request is personalized (logged-in user or non-empty cart).
++		 * @param string $store_namespace Block or IAPI store namespace making the decision.
++		 */
++		return (bool) apply_filters( 'woocommerce_embed_personalized_data', $default, $store_namespace );
++	}
++}
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
+index 0e9bef12b06516bff14de7d45db1c7e5f1241bbc..aba89a5363bc1f01bf95b24f3a785e30949c4d88 100644
+--- a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
++++ b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
+@@ -30,6 +30,10 @@ class BlocksSharedStateTest extends \WC_Unit_Test_Case {
+ 	 */
+ 	public function tearDown(): void {
+ 		remove_all_filters( 'woocommerce_cart_contents_count' );
++		if ( isset( WC()->cart ) ) {
++			WC()->cart->empty_cart();
++		}
++		wp_set_current_user( 0 );
+ 		$this->reset_shared_state();
+ 		parent::tearDown();
+ 	}
+@@ -101,4 +105,81 @@ class BlocksSharedStateTest extends \WC_Unit_Test_Case {
+ 		$this->assertArrayHasKey( 'nonOptimisticProperties', $config );
+ 		$this->assertSame( array(), $config['nonOptimisticProperties'] );
+ 	}
++
++	/**
++	 * @testdox should_hydrate returns false for anonymous requests with an empty cart.
++	 */
++	public function test_should_hydrate_false_for_anonymous_empty_cart(): void {
++		wp_set_current_user( 0 );
++		WC()->cart->empty_cart();
++
++		$this->assertFalse( BlocksSharedState::should_hydrate() );
++		$this->assertFalse( BlocksSharedState::should_hydrate( 'woocommerce/cart' ) );
++	}
++
++	/**
++	 * @testdox should_hydrate returns true for logged-in users even with an empty cart.
++	 */
++	public function test_should_hydrate_true_for_logged_in_users(): void {
++		$user_id = $this->factory()->user->create();
++		wp_set_current_user( $user_id );
++		WC()->cart->empty_cart();
++
++		$this->assertTrue( BlocksSharedState::should_hydrate() );
++	}
++
++	/**
++	 * @testdox should_hydrate returns true for anonymous requests with a non-empty cart.
++	 */
++	public function test_should_hydrate_true_for_anonymous_with_cart_contents(): void {
++		wp_set_current_user( 0 );
++		$product = \WC_Helper_Product::create_simple_product();
++		WC()->cart->add_to_cart( $product->get_id() );
++
++		$this->assertTrue( BlocksSharedState::should_hydrate() );
++
++		WC()->cart->empty_cart();
++		$product->delete( true );
++	}
++
++	/**
++	 * @testdox woocommerce_embed_personalized_data filter overrides the default and receives the namespace.
++	 */
++	public function test_should_hydrate_filter_overrides_default(): void {
++		wp_set_current_user( 0 );
++		WC()->cart->empty_cart();
++
++		$received_default   = null;
++		$received_namespace = null;
++		$filter             = function ( $default_value, $store_namespace ) use ( &$received_default, &$received_namespace ) {
++			$received_default   = $default_value;
++			$received_namespace = $store_namespace;
++			return true;
++		};
++		add_filter( 'woocommerce_embed_personalized_data', $filter, 10, 2 );
++
++		$this->assertTrue( BlocksSharedState::should_hydrate( 'woocommerce/cart' ) );
++		$this->assertFalse( $received_default );
++		$this->assertSame( 'woocommerce/cart', $received_namespace );
++
++		remove_filter( 'woocommerce_embed_personalized_data', $filter, 10 );
++	}
++
++	/**
++	 * @testdox woocommerce_embed_personalized_data filter can force neutral output for personalized requests.
++	 */
++	public function test_should_hydrate_filter_can_force_neutral(): void {
++		wp_set_current_user( 0 );
++		$product = \WC_Helper_Product::create_simple_product();
++		WC()->cart->add_to_cart( $product->get_id() );
++
++		$filter = fn() => false;
++		add_filter( 'woocommerce_embed_personalized_data', $filter );
++
++		$this->assertFalse( BlocksSharedState::should_hydrate() );
++
++		remove_filter( 'woocommerce_embed_personalized_data', $filter );
++		WC()->cart->empty_cart();
++		$product->delete( true );
++	}
+ }

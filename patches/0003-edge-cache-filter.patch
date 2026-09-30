@@ -710,14 +710,15 @@ index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d
  } );
 diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..4402b6b6d0c0b7552013dddedf85c99cadc0a7bb
+index 0000000000000000000000000000000000000000..13e72e29df68d2be81e25fa6e23e6f970bb1934c
 --- /dev/null
 +++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,168 @@
 +/**
 + * External dependencies
 + */
 +import apiFetch from '@wordpress/api-fetch';
++import { getSetting } from '@woocommerce/settings';
 +
 +/**
 + * Internal dependencies
@@ -748,17 +749,21 @@ index 0000000000000000000000000000000000000000..4402b6b6d0c0b7552013dddedf85c99c
 +	CART_STORE_KEY: 'wc/store/cart',
 +} ) );
 +
-+let mockPreloadedCheckoutData: Record< string, unknown > = {};
 +jest.mock( '@woocommerce/settings', () => {
 +	const actual = jest.requireActual( '@woocommerce/settings' );
-+	return {
-+		...actual,
-+		getSetting: ( name: string, ...rest: unknown[] ) =>
-+			name === 'checkoutData'
-+				? mockPreloadedCheckoutData
-+				: actual.getSetting( name, ...rest ),
-+	};
++	return { ...actual, getSetting: jest.fn( actual.getSetting ) };
 +} );
++
++const { getSetting: actualGetSetting } = jest.requireActual(
++	'@woocommerce/settings'
++);
++
++const setPreloadedCheckoutData = ( data: Record< string, unknown > ) => {
++	( getSetting as jest.Mock ).mockImplementation(
++		( name: string, ...rest: unknown[] ) =>
++			name === 'checkoutData' ? data : actualGetSetting( name, ...rest )
++	);
++};
 +
 +const setCartHashCookie = ( present: boolean ) => {
 +	if ( present ) {
@@ -781,7 +786,7 @@ index 0000000000000000000000000000000000000000..4402b6b6d0c0b7552013dddedf85c99c
 +	beforeEach( () => {
 +		jest.clearAllMocks();
 +		setCartHashCookie( true );
-+		mockPreloadedCheckoutData = {};
++		setPreloadedCheckoutData( {} );
 +		( isEditor as jest.Mock ).mockReturnValue( false );
 +	} );
 +
@@ -813,7 +818,7 @@ index 0000000000000000000000000000000000000000..4402b6b6d0c0b7552013dddedf85c99c
 +	} );
 +
 +	it( 'skips the request when checkout data was preloaded without a draft order', async () => {
-+		mockPreloadedCheckoutData = { order_id: 0, customer_id: 0 };
++		setPreloadedCheckoutData( { order_id: 0, customer_id: 0 } );
 +		const dispatch = makeDispatch();
 +
 +		await getCheckoutData()( {

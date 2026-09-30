@@ -64,7 +64,7 @@
 			"upstream_pr": 64289,
 			"head_repo": "jbouganim/woocommerce",
 			"head_ref": "feature/edge-caching-phase-1",
-			"pinned_commit": "1c45035f76ed0349ed54806739e4f05f56e8758d",
+			"pinned_commit": "17990b4ab6e6e32d9d72aa2f579b7ad48b474586",
 			"base_commit": "b50e93d92baf998c0b50c707966969e86749df1f",
 			"file": "patches/0003-edge-cache-filter.patch",
 			"intent": "patches/0003-edge-cache-filter.intent.md",

@@ -34,7 +34,7 @@ jobs:
   keepalive:
     name: Keep schedule enabled
     if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
     steps:
@@ -45,7 +45,7 @@ jobs:
 
   resolve:
     name: Resolve tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     outputs:
@@ -70,7 +70,7 @@ jobs:
     name: Build and test ${{ needs.resolve.outputs.tag }}
     needs: resolve
     if: needs.resolve.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     permissions:
       contents: read
@@ -117,7 +117,7 @@ jobs:
     name: Publish ${{ needs.resolve.outputs.release_tag }}
     needs: [resolve, build]
     if: inputs.dry_run != true
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
@@ -158,11 +158,25 @@ jobs:
             --notes-file notes.md \
             --latest="$IS_LATEST"
 
+  repair:
+    name: Repair
+    needs: [resolve, build]
+    if: failure() && needs.build.result == 'failure'
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    uses: ./.github/workflows/repair.yml
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
   report-failure:
     name: Report failure
     needs: [resolve, build, release]
     if: failure()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       issues: write
     env:
@@ -175,7 +189,7 @@ jobs:
           title="Build failed: WooCommerce ${TAG:-unknown tag}"
           existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number,title \
             | jq -r --arg title "$title" '.[] | select(.title == $title) | .number' | head -1)"
-          body="The build for \`${TAG:-unknown tag}\` failed, so no release was published and client sites stay on their current build. See [the run]($RUN_URL)."
+          body="The build for \`${TAG:-unknown tag}\` failed, so no release was published and client sites stay on their current build. See [the run]($RUN_URL). When the build or tests failed, an automatic repair runs next and posts its result here."
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else

@@ -53,7 +53,7 @@ index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddf
 +	);
 +};
 diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60ef5ef542b 100644
+index 7dca9b2133e85e4f4615904f95c7fbae76be3912..e7e431593d77c203d9fc958d08ae1b2395acee19 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 +++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 @@ -482,6 +482,58 @@ function preloadA11y(): void {
@@ -129,26 +129,7 @@ index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60e
  				return response;
  			},
  			// The single place that emits the cart's cross-cutting side
-@@ -588,6 +642,7 @@ const universalLock =
- 
- // Todo: export this store once the store is public.
- const { state } = store< Store >( 'woocommerce', {}, { lock: universalLock } );
-+
- const { actions } = store< Store >(
- 	'woocommerce',
- 	{
-@@ -1185,7 +1240,9 @@ const { actions } = store< Store >(
- 				}
- 
- 				// Skips if there's a pending request.
--				if ( pendingRefresh ) return;
-+				if ( pendingRefresh ) {
-+					return;
-+				}
- 
- 				pendingRefresh = true;
- 
-@@ -1201,6 +1258,7 @@ const { actions } = store< Store >(
+@@ -1201,6 +1255,7 @@ const { actions } = store< Store >(
  
  					// Extract fresh nonce from response headers.
  					state.nonce = res.headers.get( 'Nonce' ) || state.nonce;
@@ -156,18 +137,7 @@ index 7dca9b2133e85e4f4615904f95c7fbae76be3912..c13a3d0574651f01f9b3979fe29cc60e
  
  					if ( resolveNonceReady ) {
  						resolveNonceReady();
-@@ -1210,8 +1268,9 @@ const { actions } = store< Store >(
- 					const json = ( yield res.json() ) as Cart;
- 
- 					// Checks if the response contains an error.
--					if ( isApiErrorResponse( res, json ) )
-+					if ( isApiErrorResponse( res, json ) ) {
- 						throw generateError( json );
-+					}
- 
- 					// If the batcher started a cycle while we were fetching,
- 					// discard this response — the batcher will reconcile.
-@@ -1222,6 +1281,8 @@ const { actions } = store< Store >(
+@@ -1222,6 +1277,8 @@ const { actions } = store< Store >(
  					// Updates the local cart.
  					state.cart = json;
  
@@ -229,10 +199,10 @@ index 1d8a76d4e762cf8a27676c83711a25720279f9c5..c988f3ff78cc31a98095d7c935fe3fd5
  	if ( ! cartIsLoading && cartItems.length === 0 ) {
  		return <EmptyCart />;
  	}
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/cart/resolvers.ts b/plugins/woocommerce/client/blocks/assets/js/data/cart/resolvers.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
 index a0591a882c49f090aa03b0287ba6b4721c8cf750..8cd63514582eb12923fa18691898d0c235473ec1 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/cart/resolvers.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/cart/resolvers.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
 @@ -2,13 +2,14 @@
   * External dependencies
   */
@@ -281,10 +251,10 @@ index a0591a882c49f090aa03b0287ba6b4721c8cf750..8cd63514582eb12923fa18691898d0c2
  		try {
  			const cartData: CartResponse = await response.json();
  			const { receiveCart, receiveError } = dispatch;
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
 index 07aa74d3319327f371716d1b636b26bf04356dc7..fd5ca5a66a64dfc2b322a818634e00ca1e454f3f 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/action-types.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/action-types.ts
 @@ -1,5 +1,6 @@
  export const ACTION_TYPES = {
  	ADD_ADDRESS_AUTOCOMPLETE_PROVIDER: 'ADD_ADDRESS_AUTOCOMPLETE_PROVIDER',
@@ -292,10 +262,10 @@ index 07aa74d3319327f371716d1b636b26bf04356dc7..fd5ca5a66a64dfc2b322a818634e00ca
  	SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER:
  		'SET_ACTIVE_ADDRESS_AUTOCOMPLETE_PROVIDER',
  	DECREMENT_CALCULATING: 'DECREMENT_CALCULATING',
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
 index e84dedb29a6663b3617f4ce00df76c2493d587e5..41efeda74effaf82b7c15abfa10166d33a5c4edf 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/actions.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/actions.ts
 @@ -2,6 +2,7 @@
   * External dependencies
   */
@@ -323,10 +293,10 @@ index e84dedb29a6663b3617f4ce00df76c2493d587e5..41efeda74effaf82b7c15abfa10166d3
  /**
   * Set the customer id
   *
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
 index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e42d07e11 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/index.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/index.ts
 @@ -9,6 +9,7 @@ import { createReduxStore, register, subscribe } from '@wordpress/data';
  import { STORE_KEY } from './constants';
  import * as selectors from './selectors';
@@ -352,10 +322,10 @@ index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e
  subscribe( pushChanges, store );
  
  export const CHECKOUT_STORE_KEY = STORE_KEY;
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
 index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9ee8efb149 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/reducers.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
 @@ -2,6 +2,7 @@
   * External dependencies
   */
@@ -418,11 +388,11 @@ index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9e
  		case types.SET_CUSTOMER_ID:
  			if ( action.customerId !== undefined ) {
  				newState = {
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..a2d072c19506bb96d3723370d8edfbff2ad54596
 --- /dev/null
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/resolvers.ts
 @@ -0,0 +1,101 @@
 +/**
 + * External dependencies
@@ -525,10 +495,10 @@ index 0000000000000000000000000000000000000000..a2d072c19506bb96d3723370d8edfbff
 +			processErrorResponse( error as ApiErrorResponse );
 +		}
 +	};
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
 index eec2a61a3a984f3ceef540530a439ad8d8e530bf..41a401aeb26c908b98fcfc75444de2ac6b9ba70c 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/selectors.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/selectors.ts
 @@ -1,10 +1,10 @@
  /**
   * External dependencies
@@ -586,10 +556,10 @@ index eec2a61a3a984f3ceef540530a439ad8d8e530bf..41a401aeb26c908b98fcfc75444de2ac
  export const getCustomerId = ( state: CheckoutState ) => {
  	return state.customerId;
  };
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
 index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d460ca8d9 100644
---- a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/reducer.ts
+--- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts
 @@ -1,3 +1,8 @@
 +/**
 + * External dependencies
@@ -730,11 +700,11 @@ index 84bc1c506a5ef4dd4f8dd894053edffdb562c064..8e0a2adace8b6d176cb157fe6c5e527d
 +		} );
 +	} );
  } );
-diff --git a/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts
+diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
 new file mode 100644
 index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d483cc5c37
 --- /dev/null
-+++ b/plugins/woocommerce/client/blocks/assets/js/data/checkout/test/resolvers.ts
++++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts
 @@ -0,0 +1,136 @@
 +/**
 + * External dependencies
@@ -873,7 +843,7 @@ index 0000000000000000000000000000000000000000..5bbd80d3dbb1123d379433bc4cf4e2d4
 +	} );
 +} );
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
-index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..7ee3cbd0ffc9540624f4792466392ffc37f6162c 100644
+index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..bcf95b5757160e715d0af9b19a482b506b92ded7 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 @@ -1,6 +1,7 @@
@@ -884,11 +854,9 @@ index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..7ee3cbd0ffc9540624f4792466392ffc
  use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
  use Automattic\WooCommerce\Enums\TaxDisplayMode;
  
-@@ -275,9 +276,12 @@ class Cart extends AbstractBlock {
- 			}
- 		}
+@@ -277,7 +278,11 @@ class Cart extends AbstractBlock {
  
--		// Hydrate the following data depending on admin or frontend context.
+ 		// Hydrate the following data depending on admin or frontend context.
  		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
 -			$this->asset_data_registry->hydrate_api_request( '/wc/store/v1/cart' );
 +			$should_hydrate = BlocksSharedState::should_hydrate( $this->get_full_block_name() );

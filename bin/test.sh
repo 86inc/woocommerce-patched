@@ -39,6 +39,11 @@ fi
 
 log() { printf '\n==> %s\n' "$*"; }
 
+# Same pnpm shim as build.sh, since the monorepo scripts call `pnpm` directly.
+mkdir -p "$WORK_ROOT/.bin"
+corepack enable --install-directory "$WORK_ROOT/.bin" pnpm
+export PATH="$WORK_ROOT/.bin:$PATH"
+
 # Jest paths are relative to the Blocks package, where its Jest config lives.
 jest_paths=()
 while read -r path; do
@@ -47,7 +52,7 @@ done < <(jq -r '[.patches[].tests.jest[]?] | unique | .[]' "$MANIFEST")
 
 if [ "${#jest_paths[@]}" -gt 0 ]; then
 	log "Jest: ${#jest_paths[@]} suite(s)"
-	(cd "$BLOCKS" && corepack pnpm test:js -- "${jest_paths[@]}") || exit 4
+	(cd "$BLOCKS" && pnpm test:js -- "${jest_paths[@]}") || exit 4
 fi
 
 if [ "$JEST_ONLY" -eq 1 ]; then
@@ -61,7 +66,7 @@ if [ -n "$phpunit_filter" ]; then
 	(cd "$PLUGIN" && composer install --quiet) || exit 1
 
 	local_attempt=1
-	until (cd "$PLUGIN" && corepack pnpm wp-env:test start); do
+	until (cd "$PLUGIN" && pnpm wp-env:test start); do
 		if [ "$local_attempt" -eq 3 ]; then
 			echo "wp-env test environment failed to start after 3 attempts." >&2
 			exit 1
@@ -71,7 +76,7 @@ if [ -n "$phpunit_filter" ]; then
 		sleep 10
 	done
 
-	(cd "$PLUGIN" && corepack pnpm test:php:env -- --filter "($phpunit_filter)") || exit 4
+	(cd "$PLUGIN" && pnpm test:php:env -- --filter "($phpunit_filter)") || exit 4
 fi
 
 echo

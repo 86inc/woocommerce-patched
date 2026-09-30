@@ -167,13 +167,22 @@ require_node() {
 	fi
 }
 
+# Lifecycle scripts in the monorepo call `pnpm` directly, so put a corepack shim
+# (resolving the version pinned by the tag's `packageManager`) first on PATH.
+use_pnpm_shim() {
+	mkdir -p "$WORK_ROOT/.bin"
+	corepack enable --install-directory "$WORK_ROOT/.bin" pnpm
+	export PATH="$WORK_ROOT/.bin:$PATH"
+}
+
 build_zip() {
 	require_node
-	log "Installing dependencies"
-	(cd "$WORK" && corepack pnpm install --frozen-lockfile --filter='@woocommerce/plugin-woocommerce...') || exit 3
+	use_pnpm_shim
+	log "Installing dependencies (pnpm $(cd "$WORK" && pnpm --version))"
+	(cd "$WORK" && pnpm install --frozen-lockfile --filter='@woocommerce/plugin-woocommerce...') || exit 3
 
 	log "Building zip"
-	(cd "$WORK/plugins/woocommerce" && SKIP_INSTALL=1 corepack pnpm build:zip) || exit 3
+	(cd "$WORK/plugins/woocommerce" && SKIP_INSTALL=1 pnpm build:zip) || exit 3
 }
 
 write_outputs() {

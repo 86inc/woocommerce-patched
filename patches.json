@@ -57,7 +57,8 @@
 				"phpunit": [
 					"MiniCart"
 				]
-			}
+			},
+			"shipped_in": "wc-beta-tester-4.0.0"
 		},
 		{
 			"id": "edge-cache-filter",

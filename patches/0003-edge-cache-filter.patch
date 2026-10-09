@@ -53,7 +53,7 @@ index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddf
 +	);
 +};
 diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-index 7dca9b2133e85e4f4615904f95c7fbae76be3912..e7e431593d77c203d9fc958d08ae1b2395acee19 100644
+index d15da31aa0519e681d5af307977669e8d060c9c1..f08b1bc7277c87c327af409dd390e91d77cb13cb 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 +++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 @@ -482,6 +482,58 @@ function preloadA11y(): void {
@@ -883,7 +883,7 @@ index 0000000000000000000000000000000000000000..13e72e29df68d2be81e25fa6e23e6f97
 +	} );
 +} );
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
-index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..bcf95b5757160e715d0af9b19a482b506b92ded7 100644
+index 7c8465fc0887290fc6a4f1bc49a254264b230850..ca1a4b99f2db65c773bc27e156940416b0716c05 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 @@ -1,6 +1,7 @@
@@ -894,7 +894,7 @@ index aea17c68d7d684bb2bae7bbfa6c12a44b4d53103..bcf95b5757160e715d0af9b19a482b50
  use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
  use Automattic\WooCommerce\Enums\TaxDisplayMode;
  
-@@ -277,7 +278,11 @@ class Cart extends AbstractBlock {
+@@ -260,7 +261,11 @@ class Cart extends AbstractBlock {
  
  		// Hydrate the following data depending on admin or frontend context.
  		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
@@ -937,13 +937,13 @@ index 5d48876aaf4f80d0e7ad9d7413d5b59b0b508b11..8078b70c5837748e925c66d4fcee0238
  
  		/**
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
-index 15f592221a9193b1529ce2d581f8774918f01d55..2358593bdcbb339b903889b9678273753e46327d 100644
+index 519e140c19b7ee4db72b2b111859db9abfd90b9a..5c2a8c702aea3f87c264cc58e2140fc1626473d2 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
 @@ -307,20 +307,29 @@ class MiniCart extends AbstractBlock {
  			// Pre-render the template part so nested blocks enqueue their assets before the overlay is printed in wp_footer.
  			$template_part_contents           = $this->get_template_part_contents( false );
- 			$template_part_contents           = do_blocks( $this->process_template_contents( $template_part_contents ) );
+ 			$template_part_contents           = $this->render_template_part_contents( $template_part_contents );
 -			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
  			$display_cart_price_including_tax = get_option( 'woocommerce_tax_display_cart' ) === TaxDisplayMode::INCLUSIVE;
 -			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
@@ -1062,7 +1062,7 @@ index 9ea61881aa4bdbf8664344b41f6f7b74a8560b54..ba0c1214ac1072aecde2876eab9d234c
  		// The following translation is a temporary workaround. It will be
  		// reverted to the previous form `(%d items)` as soon as the
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
-index 29c1f13a92b1582138af89b65f9056057df0e286..62d2d276ee8e9922aa6824d6eb2673d5a99d28b2 100644
+index 0b6f83220f6a2b5201aaa2099f3449b41e4d26bd..34a368e646dccd5b4ca9fd08d3df0a837d65b97d 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
 @@ -100,7 +100,9 @@ class ProductButton extends AbstractBlock {
@@ -1077,18 +1077,18 @@ index 29c1f13a92b1582138af89b65f9056057df0e286..62d2d276ee8e9922aa6824d6eb2673d5
  		$cart_redirect_after_add  = get_option( 'woocommerce_cart_redirect_after_add' ) === 'yes';
  		$ajax_add_to_cart_enabled = get_option( 'woocommerce_enable_ajax_add_to_cart' ) === 'yes';
 diff --git a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php b/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
-index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8e2475c8a 100644
+index def8db66c38b8487f5b4592099d90d036ce2c555..2ba8643c6451c96280347ca8a162c8c73c469359 100644
 --- a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
 +++ b/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
-@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Blocks\Utils;
- use InvalidArgumentException;
+@@ -8,6 +8,7 @@ use InvalidArgumentException;
  use Automattic\WooCommerce\Blocks\Package;
  use Automattic\WooCommerce\Blocks\Domain\Services\Hydration;
+ use Automattic\WooCommerce\Internal\Utilities\PriceSeparators;
 +use Automattic\WooCommerce\Utilities\HydrationUtil;
  
  /**
   * Manages the registration of interactivity config and state that is commonly shared by WooCommerce blocks.
-@@ -54,6 +55,22 @@ class BlocksSharedState {
+@@ -55,6 +56,22 @@ class BlocksSharedState {
  		nocache_headers();
  	}
  
@@ -1111,7 +1111,7 @@ index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8
  	/**
  	 * Check that the consent statement was passed.
  	 *
-@@ -102,14 +119,17 @@ class BlocksSharedState {
+@@ -103,14 +120,17 @@ class BlocksSharedState {
  		if ( null === self::$blocks_shared_cart_state ) {
  			$cart_exists       = isset( WC()->cart );
  			$cart_has_contents = $cart_exists && ! WC()->cart->is_empty();
@@ -1133,7 +1133,7 @@ index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8
  				self::prevent_cache();
  			}
  
-@@ -129,6 +149,104 @@ class BlocksSharedState {
+@@ -130,6 +150,104 @@ class BlocksSharedState {
  		}
  	}
  
@@ -1239,7 +1239,7 @@ index e01a0f9ab1482f1c4d075010f5a17f4c55e315bb..d222d318e2dfc6f1f62107e8c70fbbb8
  	 * Get currency data to include in settings.
  	 *
 diff --git a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
-index c33f1a42451e17939cfb31c9622ece0fdbfc801f..1667a745965c74270f3e5afafe3df7cd97aaff3a 100644
+index e02f627e69641d39d5df202c64172a593b4ea590..67779664e030653da9d7e0c0c9108b8383ac78d8 100644
 --- a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
 +++ b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
 @@ -79,7 +79,12 @@ class Checkout extends AbstractCartRoute {
@@ -1256,7 +1256,7 @@ index c33f1a42451e17939cfb31c9622ece0fdbfc801f..1667a745965c74270f3e5afafe3df7cd
  				],
  			],
  			[
-@@ -213,16 +218,28 @@ class Checkout extends AbstractCartRoute {
+@@ -217,16 +222,28 @@ class Checkout extends AbstractCartRoute {
  	protected function get_route_response( \WP_REST_Request $request ) {
  		$this->order = $this->get_draft_order();
  
@@ -1371,10 +1371,10 @@ index 0000000000000000000000000000000000000000..7c188934d1ebf03603034e23ea2bf6b8
 +	}
 +}
 diff --git a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
-index 89ce83d3e7ddad8d1dfbad2f47d0668cbc5d5dcb..8b63d36c2867cbb2f146513167c6f6ef41297aee 100644
+index ff1c42db37d884bbae36c3b48846deba0a7825f0..1309a05f5897f47ea9763ecc35161c465c3ec6ec 100644
 --- a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
 +++ b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
-@@ -2713,6 +2713,32 @@ class Checkout extends \WP_Test_REST_TestCase {
+@@ -2846,6 +2846,32 @@ class Checkout extends \WP_Test_REST_TestCase {
  		$this->assertEmpty( WC()->session->get( 'store_api_draft_order' ) );
  	}
  
@@ -1408,7 +1408,7 @@ index 89ce83d3e7ddad8d1dfbad2f47d0668cbc5d5dcb..8b63d36c2867cbb2f146513167c6f6ef
  	 * GET should not fire `woocommerce_store_api_checkout_update_order_meta` (only PATCH/POST do).
  	 */
 diff --git a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
-index 0e9bef12b06516bff14de7d45db1c7e5f1241bbc..aba89a5363bc1f01bf95b24f3a785e30949c4d88 100644
+index c99b1a660819f93761be113c7d3516c891174b54..37652ea76fe5a6944b5b748d036158d6e2e36ce8 100644
 --- a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
 +++ b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
 @@ -30,6 +30,10 @@ class BlocksSharedStateTest extends \WC_Unit_Test_Case {
@@ -1422,7 +1422,7 @@ index 0e9bef12b06516bff14de7d45db1c7e5f1241bbc..aba89a5363bc1f01bf95b24f3a785e30
  		$this->reset_shared_state();
  		parent::tearDown();
  	}
-@@ -101,4 +105,81 @@ class BlocksSharedStateTest extends \WC_Unit_Test_Case {
+@@ -116,4 +120,81 @@ class BlocksSharedStateTest extends \WC_Unit_Test_Case {
  		$this->assertArrayHasKey( 'nonOptimisticProperties', $config );
  		$this->assertSame( array(), $config['nonOptimisticProperties'] );
  	}

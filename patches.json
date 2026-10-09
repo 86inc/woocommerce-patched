@@ -80,7 +80,7 @@
 			],
 			"min_version": "11.1.0",
 			"notes": "Drop once #64289 ships. Refreshed from the PR onto the 11.1.x file layout (checkout data moved to packages/public-api in #66974), without the PR's cosmetic-only hunks.",
-			"refreshed_on": "11.1.2",
+			"refreshed_on": "11.2.0",
 			"watch_paths": [
 				"plugins/woocommerce/src/Blocks/BlockTypes/",
 				"plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php",

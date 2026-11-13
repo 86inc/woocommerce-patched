@@ -53,10 +53,10 @@ index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddf
 +	);
 +};
 diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-index d15da31aa0519e681d5af307977669e8d060c9c1..f08b1bc7277c87c327af409dd390e91d77cb13cb 100644
+index 98e9bd13b179f8561ca0bcff206876ba291d2678..d13242a9d8840207bf1c3385ee9f3a132bfe85e3 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 +++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-@@ -482,6 +482,58 @@ function preloadA11y(): void {
+@@ -483,6 +483,58 @@ function preloadA11y(): void {
  		} );
  }
  
@@ -115,13 +115,15 @@ index d15da31aa0519e681d5af307977669e8d060c9c1..f08b1bc7277c87c327af409dd390e91d
  /**
   * Cart request queue singleton
   *
-@@ -513,11 +565,13 @@ async function sendCartRequest(
+@@ -514,6 +566,7 @@ async function sendCartRequest(
  			},
  			commit: ( serverState ) => {
  				stateRef.cart = serverState;
 +				pushCartToReduxStore( serverState );
  			},
- 			fetchHandler: async ( ...args ) => {
+ 			onProcessingChange: ( isProcessing ) => {
+ 				stateRef.isCartUpdating = isProcessing;
+@@ -522,6 +575,7 @@ async function sendCartRequest(
  				const response = await fetch( ...args );
  				stateRef.nonce =
  					response.headers.get( 'Nonce' ) || stateRef.nonce;
@@ -129,7 +131,7 @@ index d15da31aa0519e681d5af307977669e8d060c9c1..f08b1bc7277c87c327af409dd390e91d
  				return response;
  			},
  			// The single place that emits the cart's cross-cutting side
-@@ -1201,6 +1255,7 @@ const { actions } = store< Store >(
+@@ -1205,6 +1259,7 @@ const { actions } = store< Store >(
  
  					// Extract fresh nonce from response headers.
  					state.nonce = res.headers.get( 'Nonce' ) || state.nonce;
@@ -137,7 +139,7 @@ index d15da31aa0519e681d5af307977669e8d060c9c1..f08b1bc7277c87c327af409dd390e91d
  
  					if ( resolveNonceReady ) {
  						resolveNonceReady();
-@@ -1222,6 +1277,8 @@ const { actions } = store< Store >(
+@@ -1227,6 +1282,8 @@ const { actions } = store< Store >(
  					// Updates the local cart.
  					state.cart = json;
  
@@ -323,7 +325,7 @@ index 1b998bb5c7bde2d8fff9b401d59034f086260620..e39d63344bd8c976206ae3ba2cb2d84e
  
  export const CHECKOUT_STORE_KEY = STORE_KEY;
 diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
-index 44be74be18d9d33189f1a98f52d16a58e91090f0..28e23bb0f9496364a37247add84d7e9ee8efb149 100644
+index 44e260b85ea82db582e20814b0377167046e77df..87435a939061ed0301ecccad027535ce58c85970 100644
 --- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
 +++ b/plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/reducers.ts
 @@ -2,6 +2,7 @@
@@ -883,7 +885,7 @@ index 0000000000000000000000000000000000000000..13e72e29df68d2be81e25fa6e23e6f97
 +	} );
 +} );
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
-index 7c8465fc0887290fc6a4f1bc49a254264b230850..ca1a4b99f2db65c773bc27e156940416b0716c05 100644
+index d060171d6b18ae9bddd114d441daddfe4172b59a..d463b9a59080a37ff693c8da5adfb74003ed8ed0 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/Cart.php
 @@ -1,6 +1,7 @@
@@ -894,7 +896,7 @@ index 7c8465fc0887290fc6a4f1bc49a254264b230850..ca1a4b99f2db65c773bc27e156940416
  use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
  use Automattic\WooCommerce\Enums\TaxDisplayMode;
  
-@@ -260,7 +261,11 @@ class Cart extends AbstractBlock {
+@@ -252,7 +253,11 @@ class Cart extends AbstractBlock {
  
  		// Hydrate the following data depending on admin or frontend context.
  		if ( ! is_admin() && ! WC()->is_rest_api_request() ) {
@@ -937,13 +939,13 @@ index 5d48876aaf4f80d0e7ad9d7413d5b59b0b508b11..8078b70c5837748e925c66d4fcee0238
  
  		/**
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
-index 519e140c19b7ee4db72b2b111859db9abfd90b9a..5c2a8c702aea3f87c264cc58e2140fc1626473d2 100644
+index 3184f9dc7b3325626e7cf887dbfac8ea3749f0e7..5103384b38c29c48c79d544830b61dd21671e3f0 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCart.php
-@@ -307,20 +307,29 @@ class MiniCart extends AbstractBlock {
- 			// Pre-render the template part so nested blocks enqueue their assets before the overlay is printed in wp_footer.
- 			$template_part_contents           = $this->get_template_part_contents( false );
- 			$template_part_contents           = $this->render_template_part_contents( $template_part_contents );
+@@ -326,20 +326,29 @@ class MiniCart extends AbstractBlock {
+ 			$product_count_visibility         = isset( $attributes['productCountVisibility'] ) ? $attributes['productCountVisibility'] : 'greater_than_zero';
+ 			$wrapper_classes                  = sprintf( 'wc-block-mini-cart wp-block-woocommerce-mini-cart %s', $classes_styles['classes'] );
+ 			$wrapper_styles                   = $classes_styles['styles'];
 -			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
  			$display_cart_price_including_tax = get_option( 'woocommerce_tax_display_cart' ) === TaxDisplayMode::INCLUSIVE;
 -			$cart_item_count                  = $cart ? $cart->get_cart_contents_count() : 0;
@@ -979,7 +981,7 @@ index 519e140c19b7ee4db72b2b111859db9abfd90b9a..5c2a8c702aea3f87c264cc58e2140fc1
  			}
  
  			// The following translation is a temporary workaround. It will be
-@@ -337,7 +346,7 @@ class MiniCart extends AbstractBlock {
+@@ -356,7 +365,7 @@ class MiniCart extends AbstractBlock {
  				array(
  					'isOpen'             => false,
  					'totalItemsInCart'   => $cart_item_count,
@@ -987,9 +989,9 @@ index 519e140c19b7ee4db72b2b111859db9abfd90b9a..5c2a8c702aea3f87c264cc58e2140fc1
 +					'shouldShowTaxLabel' => $should_show_tax,
  					'badgeIsVisible'     => $badge_is_visible,
  					'formattedSubtotal'  => $formatted_subtotal,
- 					'drawerOverlayClass' => 'wc-block-components-drawer__screen-overlay wc-block-components-drawer__screen-overlay--with-slide-out wc-block-components-drawer__screen-overlay--is-hidden',
+ 					'buttonAriaLabel'    => function () use ( $button_aria_label_template ) {
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
-index 95d1b68586ad19be34f54f67434ca1a9891c4ca4..6d5e3d6e977db44aef0825524c08f62e5bfcc449 100644
+index 5825dde3e563d3ac280af250162e99202ae14396..4468e97991aa08d7bbc0c02b913f17c381db5540 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartFooterBlock.php
 @@ -1,9 +1,9 @@
@@ -1062,20 +1064,45 @@ index 9ea61881aa4bdbf8664344b41f6f7b74a8560b54..ba0c1214ac1072aecde2876eab9d234c
  		// The following translation is a temporary workaround. It will be
  		// reverted to the previous form `(%d items)` as soon as the
 diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
-index 0b6f83220f6a2b5201aaa2099f3449b41e4d26bd..34a368e646dccd5b4ca9fd08d3df0a837d65b97d 100644
+index b3aeaa06aae4c005f4028bc81e8bddb0abc60121..b8266bb1971f150bda45f958b5e55ac9dd25d055 100644
 --- a/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
 +++ b/plugins/woocommerce/src/Blocks/BlockTypes/ProductButton.php
-@@ -100,7 +100,9 @@ class ProductButton extends AbstractBlock {
+@@ -93,7 +93,9 @@ class ProductButton extends AbstractBlock {
  
  		BlocksSharedState::load_cart_state( 'I acknowledge that using private APIs means my theme or plugin will inevitably break in the next version of WooCommerce' );
  
--		$number_of_items_in_cart  = $this->get_cart_item_quantities_by_product_id( $product->get_id() );
+-		$number_of_items_in_cart  = InCartQuantity::for_product( $product->get_id() );
 +		$should_hydrate = BlocksSharedState::should_hydrate( 'woocommerce/product-button' );
 +
-+		$number_of_items_in_cart  = $should_hydrate ? $this->get_cart_item_quantities_by_product_id( $product->get_id() ) : 0;
++		$number_of_items_in_cart  = $should_hydrate ? InCartQuantity::for_product( $product->get_id() ) : 0;
  		$is_product_purchasable   = $this->is_product_purchasable( $product );
  		$cart_redirect_after_add  = get_option( 'woocommerce_cart_redirect_after_add' ) === 'yes';
  		$ajax_add_to_cart_enabled = get_option( 'woocommerce_enable_ajax_add_to_cart' ) === 'yes';
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/ProductCollection/Utils.php b/plugins/woocommerce/src/Blocks/BlockTypes/ProductCollection/Utils.php
+index f49ec22683c3a0788c439201fc89854875668631..32efe1fa7f6fb55f8c093605dea7349ec5b7cfcd 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/ProductCollection/Utils.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/ProductCollection/Utils.php
+@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Blocks\BlockTypes\ProductCollection;
+ use WP_Query;
+ use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
+ use Automattic\WooCommerce\Utilities\ArrayUtil;
++use Automattic\WooCommerce\Utilities\HydrationUtil;
+ 
+ /**
+  * Utility methods used for the Product Collection block.
+@@ -127,6 +128,12 @@ class Utils {
+ 			return array();
+ 		}
+ 
++		// Keep cart-based collections (e.g. cross-sells in the Mini-Cart) out of
++		// HTML that must stay neutral for a shared cache.
++		if ( ! HydrationUtil::should_hydrate( 'woocommerce/product-collection' ) ) {
++			return array();
++		}
++
+ 		$items = array();
+ 		foreach ( WC()->cart->get_cart() as $cart_item ) {
+ 			if ( ! isset( $cart_item['product_id'] ) ) {
 diff --git a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php b/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
 index def8db66c38b8487f5b4592099d90d036ce2c555..2ba8643c6451c96280347ca8a162c8c73c469359 100644
 --- a/plugins/woocommerce/src/Blocks/Utils/BlocksSharedState.php
@@ -1239,10 +1266,10 @@ index def8db66c38b8487f5b4592099d90d036ce2c555..2ba8643c6451c96280347ca8a162c8c7
  	 * Get currency data to include in settings.
  	 *
 diff --git a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
-index e02f627e69641d39d5df202c64172a593b4ea590..67779664e030653da9d7e0c0c9108b8383ac78d8 100644
+index 056a0522a803d0760056c86ac24e5488a2b84a0c..79a9c3ffada5ca4f58b3b0b4a84b21f8b4331925 100644
 --- a/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
 +++ b/plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php
-@@ -79,7 +79,12 @@ class Checkout extends AbstractCartRoute {
+@@ -80,7 +80,12 @@ class Checkout extends AbstractCartRoute {
  				'callback'            => [ $this, 'get_response' ],
  				'permission_callback' => '__return_true',
  				'args'                => [
@@ -1256,7 +1283,7 @@ index e02f627e69641d39d5df202c64172a593b4ea590..67779664e030653da9d7e0c0c9108b83
  				],
  			],
  			[
-@@ -217,16 +222,28 @@ class Checkout extends AbstractCartRoute {
+@@ -238,16 +243,28 @@ class Checkout extends AbstractCartRoute {
  	protected function get_route_response( \WP_REST_Request $request ) {
  		$this->order = $this->get_draft_order();
  
@@ -1370,12 +1397,55 @@ index 0000000000000000000000000000000000000000..7c188934d1ebf03603034e23ea2bf6b8
 +		return (bool) apply_filters( 'woocommerce_embed_personalized_data', $default, $store_namespace );
 +	}
 +}
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/ProductCollection/CartReferenceTest.php b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/ProductCollection/CartReferenceTest.php
+index 26f65cb52e42cb509831aace42a421e39dbab55d..51aa0b26e7fb57fc4565b3ceb79427b85f31830d 100644
+--- a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/ProductCollection/CartReferenceTest.php
++++ b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/ProductCollection/CartReferenceTest.php
+@@ -127,4 +127,38 @@ class CartReferenceTest extends WC_Unit_Test_Case {
+ 		$this->assertStringNotContainsString( 'callbacks.refreshCartReference', $html );
+ 		$this->assertSame( '', $sut->handle_rendering( '<div></div>', $block ), 'An empty explicit collection does not need a cart placeholder.' );
+ 	}
++
++	/**
++	 * @testdox Should leave cart products out of the cart context when personalized data must not be embedded.
++	 */
++	public function test_cart_context_is_empty_when_not_hydrating(): void {
++		$cart_product = WC_Helper_Product::create_simple_product();
++		$cart_product->set_cross_sell_ids( array( 101, 102 ) );
++		$cart_product->save();
++		WC()->cart->add_to_cart( $cart_product->get_id() );
++		add_filter( 'woocommerce_embed_personalized_data', '__return_false' );
++
++		try {
++			$parsed_block                        = Utils::get_base_parsed_block();
++			$parsed_block['attrs']['collection'] = 'woocommerce/product-collection/cross-sells';
++			$context                             = ( new Renderer() )->extend_context_for_inner_blocks(
++				array( Renderer::PRODUCT_REFERENCE_CONTEXT => Renderer::REFERENCE_TYPE_CART ),
++				$parsed_block
++			);
++			$this->assertSame(
++				array(
++					'type'       => 'cart',
++					'sourceData' => array( 'productIds' => array() ),
++				),
++				$context['productCollectionLocation']
++			);
++
++			$parsed_block['attrs']['productCollectionLocation'] = $context['productCollectionLocation'];
++			$query = Utils::initialize_merged_query( new ProductCollectionMock(), $parsed_block );
++			$this->assertEmpty( array_intersect( array( 101, 102 ), $query['post__in'] ?? array() ), 'Cross-sells from the cart must not be rendered.' );
++		} finally {
++			remove_filter( 'woocommerce_embed_personalized_data', '__return_false' );
++			WC()->cart->empty_cart();
++		}
++	}
+ }
 diff --git a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
-index ff1c42db37d884bbae36c3b48846deba0a7825f0..1309a05f5897f47ea9763ecc35161c465c3ec6ec 100644
+index 6e67a6f27066b2d86c7bcd886eba22cd85e0f840..1d55e1491285762ad702f82387f73bad596f8882 100644
 --- a/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
 +++ b/plugins/woocommerce/tests/php/src/Blocks/StoreApi/Routes/Checkout.php
-@@ -2846,6 +2846,32 @@ class Checkout extends \WP_Test_REST_TestCase {
- 		$this->assertEmpty( WC()->session->get( 'store_api_draft_order' ) );
+@@ -4507,6 +4507,32 @@ class Checkout extends \WP_Test_REST_TestCase {
+ 		$this->assertSame( 0, $gateway_resolution_count, 'Available payment gateways must not be resolved when no payment method is supplied.' );
  	}
  
 +	/**
@@ -1405,7 +1475,7 @@ index ff1c42db37d884bbae36c3b48846deba0a7825f0..1309a05f5897f47ea9763ecc35161c46
 +	}
 +
  	/**
- 	 * GET should not fire `woocommerce_store_api_checkout_update_order_meta` (only PATCH/POST do).
+ 	 * @testdox Should return an error response when restoring the cart session throws.
  	 */
 diff --git a/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php b/plugins/woocommerce/tests/php/src/Blocks/Utils/BlocksSharedStateTest.php
 index c99b1a660819f93761be113c7d3516c891174b54..37652ea76fe5a6944b5b748d036158d6e2e36ce8 100644

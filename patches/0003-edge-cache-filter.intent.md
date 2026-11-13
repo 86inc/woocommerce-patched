@@ -8,6 +8,7 @@ Upstream: [#64289](https://github.com/woocommerce/woocommerce/pull/64289)
 - When it returns false, blocks emit neutral markup safe for a shared cache, and per-user data loads on the client:
   - Cart, Checkout, Mini-Cart (and its footer and title counter), and Product Button render empty-cart state and no item counts.
   - `BlocksSharedState` provides the empty cart schema instead of the real cart.
+  - Product Collections that reference the cart (cross-sells and upsells, including in the Mini-Cart drawer) get no cart product IDs (`ProductCollection\Utils::get_cart_product_ids()`).
   - Checkout renders `CheckoutSkeleton` until the `getCheckoutData` resolver has loaded `GET /wc/store/v1/checkout?__experimental_calc_totals=true`, which returns `__experimentalCart`.
 - The `getCheckoutData` resolver only fetches on non-hydrated pages. It skips when the `checkoutData` setting was preloaded, not only when the order ID is above 0: `GET /checkout` never creates a draft order, so hydrated pages usually have order ID 0.
 - `__experimental_calc_totals` recalculates cart totals on both GET paths: with an existing draft order (the response gains `__experimentalCart`) and without one (the no-order response always embeds `__experimentalCart`).
@@ -21,7 +22,7 @@ Upstream: [#64289](https://github.com/woocommerce/woocommerce/pull/64289)
 
 ## Watch upstream
 
-- Anything reading `WC()->cart` or cart counts in `src/Blocks/BlockTypes/`.
+- Anything reading `WC()->cart` or cart counts in `src/Blocks/BlockTypes/`, including `ProductCollection/` cart references.
 - New blocks with `supports.interactivity` that render per-user data server-side.
 - `src/StoreApi/Routes/V1/Checkout.php`, the GET route and `__experimental_calc_totals`.
 - `client/blocks/packages/public-api/block-data/checkout/` and `.../cart/resolvers.ts` (moved from `assets/js/data/` in [#66974](https://github.com/woocommerce/woocommerce/pull/66974)).

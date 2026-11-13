@@ -53,10 +53,35 @@ index 0000000000000000000000000000000000000000..70143107bfaabc0c223f1f71860eaddf
 +	);
 +};
 diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-index 98e9bd13b179f8561ca0bcff206876ba291d2678..d13242a9d8840207bf1c3385ee9f3a132bfe85e3 100644
+index 98e9bd13b179f8561ca0bcff206876ba291d2678..b35e53b93b38a32d298080745ee79af07dd7286e 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
 +++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
-@@ -483,6 +483,58 @@ function preloadA11y(): void {
+@@ -116,6 +116,7 @@ export type Store = {
+ 		// Todo: Check why if I switch to an async function here the types of the store stop working.
+ 		refreshCartItems: () => Promise< void >;
+ 		waitForIdle: () => Promise< void >;
++		waitForInitialCart: () => Promise< Cart | null >;
+ 		showNoticeError: ( error: Error | ApiErrorResponse ) => Promise< void >;
+ 		updateNotices: (
+ 			notices: Notice[],
+@@ -425,6 +426,16 @@ const getInfoNoticesFromCartUpdates = (
+ let pendingRefresh = false;
+ let refreshTimeout = 3000;
+ let resolveNonceReady: ( () => void ) | null = null;
++// Settles once with the first cart fetched from the server, or null when that
++// first refresh is skipped, fails, or is superseded by a mutation.
++let resolveInitialCart: ( ( cart: Cart | null ) => void ) | null = null;
++const initialCart = new Promise< Cart | null >( ( resolve ) => {
++	resolveInitialCart = resolve;
++} );
++const settleInitialCart = ( cart: Cart | null ): void => {
++	resolveInitialCart?.( cart );
++	resolveInitialCart = null;
++};
+ const isNonceReady = new Promise< void >( ( resolve ) => {
+ 	resolveNonceReady = resolve;
+ } );
+@@ -483,6 +494,58 @@ function preloadA11y(): void {
  		} );
  }
  
@@ -115,15 +140,16 @@ index 98e9bd13b179f8561ca0bcff206876ba291d2678..d13242a9d8840207bf1c3385ee9f3a13
  /**
   * Cart request queue singleton
   *
-@@ -514,6 +566,7 @@ async function sendCartRequest(
+@@ -512,6 +575,8 @@ async function sendCartRequest(
+ 			rollback: ( snapshot ) => {
+ 				stateRef.cart = snapshot;
  			},
++			// No Redux mirror here: the `wc-blocks_store_sync_required` event
++			// already resyncs the data store after a mutation.
  			commit: ( serverState ) => {
  				stateRef.cart = serverState;
-+				pushCartToReduxStore( serverState );
  			},
- 			onProcessingChange: ( isProcessing ) => {
- 				stateRef.isCartUpdating = isProcessing;
-@@ -522,6 +575,7 @@ async function sendCartRequest(
+@@ -522,6 +587,7 @@ async function sendCartRequest(
  				const response = await fetch( ...args );
  				stateRef.nonce =
  					response.headers.get( 'Nonce' ) || stateRef.nonce;
@@ -131,7 +157,21 @@ index 98e9bd13b179f8561ca0bcff206876ba291d2678..d13242a9d8840207bf1c3385ee9f3a13
  				return response;
  			},
  			// The single place that emits the cart's cross-cutting side
-@@ -1205,6 +1259,7 @@ const { actions } = store< Store >(
+@@ -1178,11 +1244,13 @@ const { actions } = store< Store >(
+ 						resolveNonceReady();
+ 						resolveNonceReady = null;
+ 					}
++					settleInitialCart( null );
+ 					return;
+ 				}
+ 
+ 				// Skip if queue is processing - it will apply server state when done
+ 				if ( cartQueue?.getStatus().isProcessing ) {
++					settleInitialCart( null );
+ 					return;
+ 				}
+ 
+@@ -1205,6 +1273,7 @@ const { actions } = store< Store >(
  
  					// Extract fresh nonce from response headers.
  					state.nonce = res.headers.get( 'Nonce' ) || state.nonce;
@@ -139,15 +179,141 @@ index 98e9bd13b179f8561ca0bcff206876ba291d2678..d13242a9d8840207bf1c3385ee9f3a13
  
  					if ( resolveNonceReady ) {
  						resolveNonceReady();
-@@ -1227,6 +1282,8 @@ const { actions } = store< Store >(
+@@ -1227,6 +1296,9 @@ const { actions } = store< Store >(
  					// Updates the local cart.
  					state.cart = json;
  
 +					pushCartToReduxStore( json );
++					settleInitialCart( json );
 +
  					// Resets the timeout.
  					refreshTimeout = 3000;
  				} catch ( error ) {
+@@ -1237,6 +1309,7 @@ const { actions } = store< Store >(
+ 					refreshTimeout *= 2;
+ 				} finally {
+ 					pendingRefresh = false;
++					settleInitialCart( null );
+ 				}
+ 			},
+ 
+@@ -1246,6 +1319,14 @@ const { actions } = store< Store >(
+ 				}
+ 			},
+ 
++			/**
++			 * Resolves with the first cart fetched from the server, or null
++			 * when it was skipped, failed, or superseded by a mutation.
++			 */
++			*waitForInitialCart(): AsyncAction< Cart | null > {
++				return ( yield initialCart ) as Cart | null;
++			},
++
+ 			*showNoticeError(
+ 				error: Error | ApiErrorResponse
+ 			): AsyncAction< void > {
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+index b42f7f7cfff139465ee41c7c92ae587d1da7fafd..cb2b5aded60af12cb855e137dd4b28d2d8460f7b 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+@@ -2185,4 +2185,97 @@ describe( 'WooCommerce Cart Interactivity API Store', () => {
+ 			cleanup();
+ 		} );
+ 	} );
++
++	describe( 'syncing with the @wordpress/data cart store', () => {
++		const receiveCart = jest.fn();
++		const finishResolution = jest.fn();
++
++		beforeEach( () => {
++			(
++				window as unknown as {
++					wp: { data: { dispatch: () => unknown } };
++				}
++			 ).wp = {
++				data: { dispatch: () => ( { receiveCart, finishResolution } ) },
++			};
++		} );
++
++		afterEach( () => {
++			delete ( window as unknown as { wp?: unknown } ).wp;
++		} );
++
++		it( 'mirrors the initial cart fetch but not mutation commits, which the sync event already covers', async () => {
++			mockBatchFetch();
++			const actions = await loadCartStore();
++			expect( receiveCart ).toHaveBeenCalledTimes( 1 );
++			seedCart( [] );
++			const { events, cleanup } = captureSyncEvents();
++
++			await runAction(
++				actions.addCartItem( {
++					id: 1,
++					quantityToAdd: 1,
++					type: 'simple',
++				} )
++			);
++			await flushMicrotasks();
++
++			expect( events ).toHaveLength( 1 );
++			expect( receiveCart ).toHaveBeenCalledTimes( 1 );
++
++			cleanup();
++		} );
++	} );
++
++	describe( 'waitForInitialCart', () => {
++		const originalRestUrl = mockState.restUrl;
++
++		afterEach( () => {
++			mockState.restUrl = originalRestUrl;
++		} );
++
++		it( 'resolves with the first cart fetched from the server', async () => {
++			mockBatchFetch();
++			const actions = await loadCartStore();
++
++			await expect(
++				runAction( actions.waitForInitialCart() )
++			).resolves.toEqual( { items: [], totals: {}, errors: [] } );
++		} );
++
++		it( 'resolves with null when the first fetch fails', async () => {
++			global.fetch = jest
++				.fn()
++				.mockRejectedValue( new TypeError( 'Failed to fetch' ) );
++			jest.useFakeTimers();
++
++			try {
++				jest.isolateModules( () => require( '../cart' ) );
++				const actions =
++					mockRegisteredStore?.actions as Store[ 'actions' ];
++				await runAction( actions.refreshCartItems() );
++
++				await expect(
++					runAction( actions.waitForInitialCart() )
++				).resolves.toBeNull();
++			} finally {
++				jest.clearAllTimers();
++				jest.useRealTimers();
++			}
++		} );
++
++		it( 'resolves with null when there is no restUrl to fetch from', async () => {
++			mockState.restUrl = '';
++			global.fetch = jest.fn();
++
++			jest.isolateModules( () => require( '../cart' ) );
++			const actions = mockRegisteredStore?.actions as Store[ 'actions' ];
++			await runAction( actions.refreshCartItems() );
++
++			await expect(
++				runAction( actions.waitForInitialCart() )
++			).resolves.toBeNull();
++			expect( global.fetch ).not.toHaveBeenCalled();
++		} );
++	} );
+ } );
 diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx
 index 1d8a76d4e762cf8a27676c83711a25720279f9c5..c988f3ff78cc31a98095d7c935fe3fd589b9a785 100644
 --- a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/block.tsx
@@ -201,6 +367,95 @@ index 1d8a76d4e762cf8a27676c83711a25720279f9c5..c988f3ff78cc31a98095d7c935fe3fd5
  	if ( ! cartIsLoading && cartItems.length === 0 ) {
  		return <EmptyCart />;
  	}
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/cart-reference-frontend.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/cart-reference-frontend.ts
+index 3b493e8a0d069405f9ab256cd6c577cf03a7fae3..e365c9ebd78615705aa56d128cd12b365caaea36 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/cart-reference-frontend.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/cart-reference-frontend.ts
+@@ -88,12 +88,27 @@ const cartReferenceStorePart = {
+ 				return;
+ 			}
+ 
++			if ( lastCartSignature === undefined ) {
++				// Take the baseline from the first cart fetched from the server
++				// rather than the SSR state: a page rendered without per-user
++				// data (`woocommerce_embed_personalized_data`) embeds an empty
++				// cart, and comparing against it would refetch the page on
++				// every view. Fall back to the SSR cart when that first fetch
++				// did not apply, e.g. because a mutation superseded it.
++				const ssrSignature = getCartSignature(
++					woocommerceState.cart?.items
++				);
++				const fetchedCart =
++					( yield woocommerceActions.waitForInitialCart?.() ) as
++						WooCommerce[ 'state' ][ 'cart' ] | null | undefined;
++				lastCartSignature ??= fetchedCart
++					? getCartSignature( fetchedCart.items )
++					: ssrSignature;
++			}
++
+ 			const signature = getCartSignature( woocommerceState.cart?.items );
+ 
+-			if ( lastCartSignature === undefined ) {
+-				// First run only records the SSR baseline.
+-				lastCartSignature = signature;
+-			} else if ( signature !== lastCartSignature ) {
++			if ( signature !== lastCartSignature ) {
+ 				// Wait until in-flight cart mutations settle: prefetching
+ 				// while a Store API request is being processed would cache
+ 				// HTML rendered from a not-yet-updated cart.
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/test/cart-reference-frontend.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/test/cart-reference-frontend.ts
+index 9f815a0c8ea8ab88f9ea325d2a173b593684f471..1fc8c02632808edbc6d667b1b16cf77d4b669371 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/test/cart-reference-frontend.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/test/cart-reference-frontend.ts
+@@ -1,6 +1,7 @@
+ const mockCart = { items: [] as { id: number; quantity: number }[] };
+ const mockMiniCart = { isOpen: false };
+ const mockWaitForIdle = jest.fn();
++const mockWaitForInitialCart = jest.fn();
+ const mockPrefetch = jest.fn();
+ const mockNavigate = jest.fn();
+ const mockGetConfig = jest.fn();
+@@ -16,7 +17,10 @@ jest.mock( '@wordpress/interactivity', () => ( {
+ 		if ( namespace === 'woocommerce' ) {
+ 			return {
+ 				state: { cart: mockCart },
+-				actions: { waitForIdle: mockWaitForIdle },
++				actions: {
++					waitForIdle: mockWaitForIdle,
++					waitForInitialCart: mockWaitForInitialCart,
++				},
+ 			};
+ 		}
+ 		if ( namespace === 'woocommerce/mini-cart' ) {
+@@ -241,4 +245,28 @@ describe( 'cart reference refresh', () => {
+ 		expect( mockPrefetch ).not.toHaveBeenCalled();
+ 		expect( mockNavigate ).not.toHaveBeenCalled();
+ 	} );
++
++	it( 'takes the baseline from the first fetched cart, so a page rendered with an empty cart does not refetch on load', async () => {
++		mockWaitForInitialCart.mockImplementation( async () => {
++			mockCart.items = [ { id: 1, quantity: 1 } ];
++			return { items: mockCart.items };
++		} );
++		await Promise.all( [ refresh(), refresh() ] );
++		await refresh();
++		expect( mockPrefetch ).not.toHaveBeenCalled();
++
++		mockCart.items = [ ...mockCart.items, { id: 2, quantity: 1 } ];
++		await refresh();
++		expect( mockPrefetch ).toHaveBeenCalledTimes( 1 );
++	} );
++
++	it( 'falls back to the rendered cart when the first fetch did not apply', async () => {
++		mockWaitForInitialCart.mockImplementation( async () => {
++			// A mutation superseded the first fetch and added a product.
++			mockCart.items = [ { id: 1, quantity: 1 } ];
++			return null;
++		} );
++		await refresh();
++		expect( mockPrefetch ).toHaveBeenCalledTimes( 1 );
++	} );
+ } );
 diff --git a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts b/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts
 index a0591a882c49f090aa03b0287ba6b4721c8cf750..8cd63514582eb12923fa18691898d0c235473ec1 100644
 --- a/plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/resolvers.ts

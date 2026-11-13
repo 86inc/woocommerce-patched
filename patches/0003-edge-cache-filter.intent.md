@@ -12,7 +12,8 @@ Upstream: [#64289](https://github.com/woocommerce/woocommerce/pull/64289)
   - Checkout renders `CheckoutSkeleton` until the `getCheckoutData` resolver has loaded `GET /wc/store/v1/checkout?__experimental_calc_totals=true`, which returns `__experimentalCart`.
 - The `getCheckoutData` resolver only fetches on non-hydrated pages. It skips when the `checkoutData` setting was preloaded, not only when the order ID is above 0: `GET /checkout` never creates a draft order, so hydrated pages usually have order ID 0.
 - `__experimental_calc_totals` recalculates cart totals on both GET paths: with an existing draft order (the response gains `__experimentalCart`) and without one (the no-order response always embeds `__experimentalCart`).
-- The iAPI cart store mirrors fetched cart data into the `wc/store/cart` data store (`pushCartToReduxStore`, which sets `window.wcIapiCartHydrated`), and mirrors response nonces into apiFetch (`pushNonceToApiFetchMiddleware`).
+- The iAPI cart store mirrors `GET /cart` responses into the `wc/store/cart` data store (`pushCartToReduxStore`, which sets `window.wcIapiCartHydrated`), and mirrors response nonces into apiFetch (`pushNonceToApiFetchMiddleware`). It does not mirror mutation results: the `wc-blocks_store_sync_required` event already resyncs the data store, and mirroring as well fires `experimental__woocommerce_blocks-cart-updated` twice.
+- The cart-reference refresh for Product Collections (`cart-reference-frontend.ts`) takes its baseline from the first fetched cart (`waitForInitialCart`), not the server-rendered one, so a page rendered with an empty cart does not refetch itself on every view.
 
 ## Must not change
 

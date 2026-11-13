@@ -88,13 +88,15 @@
 				"plugins/woocommerce/src/StoreApi/Routes/V1/Checkout.php",
 				"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/",
 				"plugins/woocommerce/client/blocks/packages/public-api/block-data/cart/",
-				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/"
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/"
 			],
 			"tests": {
 				"jest": [
 					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/resolvers.ts",
 					"plugins/woocommerce/client/blocks/packages/public-api/block-data/checkout/test/reducer.ts",
-					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
+					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts",
+					"plugins/woocommerce/client/blocks/assets/js/blocks/product-collection/test/cart-reference-frontend.ts"
 				],
 				"phpunit": [
 					"BlocksSharedStateTest",

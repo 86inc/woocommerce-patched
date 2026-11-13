@@ -19,8 +19,8 @@ fi
 
 while read -r id version; do
 	[ -n "$id" ] || continue
-	# Tags reach here from the upstream release list; keep them to version characters.
-	if [ -n "$(tr -d '0-9A-Za-z.-' <<<"$version")" ]; then
+	# Tags reach here from the upstream release list; accept stable WooCommerce versions only.
+	if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 		echo "Skipping $id: unexpected version '$version'" >&2
 		continue
 	fi

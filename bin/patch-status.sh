@@ -25,11 +25,14 @@ UPSTREAM="$(jq -r '.upstream_repo' "$MANIFEST")"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
-# Stable upstream tags published after $1 (ISO date), oldest version first.
+# Stable WooCommerce tags published after $1 (ISO date), oldest version first.
+# The monorepo also releases other packages (e.g. wc-beta-tester-4.0.0), so keep
+# plain X.Y.Z tags only.
 stable_tags_since() {
 	gh release list -R "$UPSTREAM" --exclude-pre-releases --exclude-drafts --limit 40 \
 		--json tagName,publishedAt \
-		| jq -r --arg since "$1" '.[] | select(.publishedAt > $since) | .tagName' \
+		| jq -r --arg since "$1" \
+			'.[] | select(.publishedAt > $since and (.tagName | test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))) | .tagName' \
 		| sort -V
 }
 

@@ -104,6 +104,93 @@
 					"test_cart_context_is_empty_when_not_hydrating"
 				]
 			}
+		},
+		{
+			"id": "mini-cart-cart-snapshot",
+			"upstream_pr": null,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "fix/mini-cart-instant-count-from-storage",
+			"pinned_commit": "609ee73edb3626dd2febc36c3679e81b88bf1006",
+			"base_commit": "17990b4ab6e6e32d9d72aa2f579b7ad48b474586",
+			"file": "patches/0004-mini-cart-cart-snapshot.patch",
+			"intent": "patches/0004-mini-cart-cart-snapshot.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts"
+			],
+			"min_version": "11.3.0",
+			"notes": "Stacked on edge-cache-filter. No upstream PR yet.",
+			"watch_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts"
+			],
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart-snapshot.ts",
+					"plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts"
+				],
+				"phpunit": []
+			},
+			"refreshed_on": "11.3.0"
+		},
+		{
+			"id": "cart-item-images-filter",
+			"upstream_pr": null,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "add/cart-item-images-checkout-filter",
+			"pinned_commit": "409670988cc3cc8f28da73ad0263cfdb0e1a79f0",
+			"base_commit": "69f5d91b9e8d22219c88e65f01f2c93be7f626d1",
+			"file": "patches/0005-cart-item-images-filter.patch",
+			"intent": "patches/0005-cart-item-images-filter.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/"
+			],
+			"min_version": "11.3.0",
+			"notes": "No upstream PR yet.",
+			"watch_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/",
+				"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/order-summary/",
+				"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-image/"
+			],
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/test/index.tsx",
+					"plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/test/cart-line-item-row.tsx"
+				],
+				"phpunit": []
+			},
+			"refreshed_on": "11.3.0"
+		},
+		{
+			"id": "pickup-location-preselect-filter",
+			"upstream_pr": null,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "add/pickup-location-preselect-filter",
+			"pinned_commit": "4eee5c4e39d97698af937b5404f78933d35e68a2",
+			"base_commit": "69f5d91b9e8d22219c88e65f01f2c93be7f626d1",
+			"file": "patches/0006-pickup-location-preselect-filter.patch",
+			"intent": "patches/0006-pickup-location-preselect-filter.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/",
+				"plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php",
+				"plugins/woocommerce/tests/php/src/Blocks/BlockTypes/Checkout.php"
+			],
+			"min_version": "11.3.0",
+			"notes": "No upstream PR yet.",
+			"watch_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-shipping-method-block/",
+				"plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php"
+			],
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/test/block.tsx"
+				],
+				"phpunit": [
+					"test_enqueue_data_exposes_preselect_pickup_location"
+				]
+			},
+			"refreshed_on": "11.3.0"
 		}
 	]
 }

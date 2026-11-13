@@ -1,0 +1,298 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/block.tsx b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/block.tsx
+index 027830defb5e8b635472d141df30d39425c4573f..0c6008b0ab877cf44dfc0ec2e5b57a06393d1d40 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/block.tsx
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/block.tsx
+@@ -10,10 +10,13 @@ import {
+ 	createInterpolateElement,
+ } from '@wordpress/element';
+ import { useShippingData, useStoreCart } from '@woocommerce/base-context/hooks';
++import { useDispatch } from '@wordpress/data';
++import { validationStore } from '@woocommerce/block-data';
+ import { getCurrencyFromPriceResponse } from '@woocommerce/price-format';
+ import {
+ 	FormattedMonetaryAmount,
+ 	RadioControlOptionType,
++	ValidationInputError,
+ } from '@woocommerce/blocks-components';
+ import { decodeEntities } from '@wordpress/html-entities';
+ import { getSetting } from '@woocommerce/settings';
+@@ -141,8 +144,12 @@ const renderPickupLocation = (
+ 	};
+ };
+ 
++const PICKUP_LOCATION_ERROR_ID = 'pickup-location';
++
+ const Block = () => {
+ 	const { shippingRates, selectShippingRate } = useShippingData();
++	const { setValidationErrors, clearValidationError } =
++		useDispatch( validationStore );
+ 
+ 	// Memoize pickup locations to prevent re-rendering when the shipping rates change.
+ 	const pickupLocations: CartShippingPackageShippingRate[] = useMemo( () => {
+@@ -153,11 +160,42 @@ const Block = () => {
+ 
+ 	const [ selectedOption, setSelectedOption ] = useState<
+ 		string | undefined
+-	>(
+-		() =>
+-			pickupLocations.find( ( rate ) => rate.selected )?.rate_id ??
+-			pickupLocations[ 0 ]?.rate_id
+-	);
++	>( () => {
++		const selectedRateId = pickupLocations.find(
++			( rate ) => rate.selected
++		)?.rate_id;
++		if ( selectedRateId ) {
++			return selectedRateId;
++		}
++		// Stores can opt out of selecting the first location for the shopper
++		// with the `woocommerce_blocks_preselect_pickup_location` PHP filter.
++		return getSetting< boolean >( 'preselectPickupLocation', true )
++			? pickupLocations[ 0 ]?.rate_id
++			: undefined;
++	} );
++
++	// Without a pickup location the session keeps its previous shipping rate,
++	// so block placing the order until the shopper chooses one.
++	const isMissingPickupLocation =
++		pickupLocations.length > 0 && ! selectedOption;
++	useEffect( () => {
++		if ( isMissingPickupLocation ) {
++			void setValidationErrors( {
++				[ PICKUP_LOCATION_ERROR_ID ]: {
++					message: __(
++						'Please choose a pickup location.',
++						'woocommerce'
++					),
++					hidden: true,
++				},
++			} );
++		} else {
++			void clearValidationError( PICKUP_LOCATION_ERROR_ID );
++		}
++		return () => {
++			void clearValidationError( PICKUP_LOCATION_ERROR_ID );
++		};
++	}, [ isMissingPickupLocation, setValidationErrors, clearValidationError ] );
+ 
+ 	const handleShippingRateChange = useCallback(
+ 		( rateId: string ) => {
+@@ -225,6 +263,10 @@ const Block = () => {
+ 					) }
+ 					onChange={ ( value ) => handleShippingRateChange( value ) }
+ 				/>
++				<ValidationInputError
++					propertyName={ PICKUP_LOCATION_ERROR_ID }
++					elementId={ PICKUP_LOCATION_ERROR_ID }
++				/>
+ 			</ExperimentalOrderLocalPickupPackages>
+ 		</>
+ 	);
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/test/block.tsx b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/test/block.tsx
+index 4ef542292f5816786ddc53943a049c0cd355fd78..258b590d1161cfe3b173272cf35826d7c31edbe9 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/test/block.tsx
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/checkout/inner-blocks/checkout-pickup-options-block/test/block.tsx
+@@ -4,6 +4,8 @@
+ import { act, render, screen } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ import { useShippingData, useStoreCart } from '@woocommerce/base-context/hooks';
++import { dispatch, select } from '@wordpress/data';
++import { validationStore } from '@woocommerce/block-data';
+ 
+ /**
+  * Internal dependencies
+@@ -35,6 +37,8 @@ jest.mock( '@woocommerce/blocks-checkout', () => {
+ // Can't rely on setting it through allSettings.collectableMethodIds = [...]
+ // as getSettings is used when the module is initialized (so before attempts
+ // to overwrite setting in beforeEach/All)
++let mockPreselectPickupLocation = true;
++
+ jest.mock( '@woocommerce/settings', () => {
+ 	const actualModule = jest.requireActual( '@woocommerce/settings' );
+ 	return {
+@@ -43,6 +47,9 @@ jest.mock( '@woocommerce/settings', () => {
+ 			if ( name === 'collectableMethodIds' ) {
+ 				return [ 'pickup_nyc', 'pickup_la' ];
+ 			}
++			if ( name === 'preselectPickupLocation' ) {
++				return mockPreselectPickupLocation;
++			}
+ 
+ 			return actualModule.getSetting( name, ...rest );
+ 		},
+@@ -328,3 +335,120 @@ test( 'shows the pickup cost instead of free once the merchant sets one', async
+ 	).toBeInTheDocument();
+ 	expect( screen.queryByText( 'free' ) ).not.toBeInTheDocument();
+ } );
++
++describe( 'when pickup location pre-selection is turned off', () => {
++	beforeEach( () => {
++		mockPreselectPickupLocation = false;
++	} );
++
++	afterEach( () => {
++		mockPreselectPickupLocation = true;
++		dispatch( validationStore ).clearValidationErrors();
++	} );
++
++	test( 'selects nothing and blocks checkout until a location is chosen', async () => {
++		const selectShippingRate = jest.fn();
++		( useShippingData as jest.Mock ).mockImplementation( () => {
++			return {
++				selectShippingRate,
++				isSelectingRate: false,
++				shippingRates: [ testPackageData ],
++			};
++		} );
++
++		render( <CheckoutPickupOptionsBlock /> );
++
++		const firstRate = await screen.findByRole( 'radio', {
++			name: 'Pickup New York City free',
++		} );
++		const secondRate = screen.getByRole( 'radio', {
++			name: 'Pickup Los Angeles free',
++		} );
++
++		expect( firstRate ).not.toBeChecked();
++		expect( secondRate ).not.toBeChecked();
++		expect( selectShippingRate ).not.toHaveBeenCalled();
++		expect(
++			select( validationStore ).getValidationError( 'pickup-location' )
++		).toMatchObject( { hidden: true } );
++
++		await act( async () => {
++			await userEvent.click( secondRate );
++		} );
++
++		expect( secondRate ).toBeChecked();
++		expect( selectShippingRate ).toHaveBeenLastCalledWith(
++			'pickup_location:2'
++		);
++		expect(
++			select( validationStore ).getValidationError( 'pickup-location' )
++		).toBeUndefined();
++	} );
++
++	test( 'keeps the location the server already selected', async () => {
++		const packageData = generateShippingPackage( {
++			packageId: 0,
++			shippingRates: [
++				generateShippingRate( {
++					rateId: 'pickup_location:1',
++					name: 'Pickup New York City',
++					methodID: 'pickup_nyc',
++					price: '0',
++					instanceID: 0,
++					selected: false,
++				} ),
++				generateShippingRate( {
++					rateId: 'pickup_location:2',
++					name: 'Pickup Los Angeles',
++					methodID: 'pickup_la',
++					price: '0',
++					instanceID: 1,
++					selected: true,
++				} ),
++			],
++		} );
++		const selectShippingRate = jest.fn();
++		( useShippingData as jest.Mock ).mockImplementation( () => {
++			return {
++				selectShippingRate,
++				isSelectingRate: false,
++				shippingRates: [ packageData ],
++			};
++		} );
++
++		render( <CheckoutPickupOptionsBlock /> );
++
++		expect(
++			await screen.findByRole( 'radio', {
++				name: 'Pickup Los Angeles free',
++			} )
++		).toBeChecked();
++		expect( selectShippingRate ).toHaveBeenCalledWith(
++			'pickup_location:2'
++		);
++		expect(
++			select( validationStore ).getValidationError( 'pickup-location' )
++		).toBeUndefined();
++	} );
++} );
++
++test( 'does not block checkout when the first location is pre-selected', async () => {
++	( useShippingData as jest.Mock ).mockImplementation( () => {
++		return {
++			selectShippingRate: jest.fn(),
++			isSelectingRate: false,
++			shippingRates: [ testPackageData ],
++		};
++	} );
++
++	render( <CheckoutPickupOptionsBlock /> );
++
++	expect(
++		await screen.findByRole( 'radio', {
++			name: 'Pickup New York City free',
++		} )
++	).toBeChecked();
++	expect(
++		select( validationStore ).getValidationError( 'pickup-location' )
++	).toBeUndefined();
++} );
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php b/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
+index 8078b70c5837748e925c66d4fcee023871bfce7a..75a8e89f8035b51e67ae6496b5393de92c25f39a 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/Checkout.php
+@@ -485,6 +485,18 @@ class Checkout extends AbstractBlock {
+ 		$this->asset_data_registry->add( 'localPickupText', $pickup_location_settings['title'] );
+ 		$this->asset_data_registry->add( 'localPickupCost', $pickup_location_settings['cost'] );
+ 		$this->asset_data_registry->add( 'collectableMethodIds', $local_pickup_method_ids );
++
++		/**
++		 * Filters whether the Checkout block selects the first pickup location for the shopper.
++		 *
++		 * By default, when the shopper chooses pickup and no pickup location is selected yet, the first location is
++		 * selected for them. Return false to start with no location selected, so the shopper must choose one before
++		 * placing the order.
++		 *
++		 * @since 11.4.0
++		 * @param bool $preselect Whether to select the first pickup location. Default true.
++		 */
++		$this->asset_data_registry->add( 'preselectPickupLocation', (bool) apply_filters( 'woocommerce_blocks_preselect_pickup_location', true ) );
+ 		$this->asset_data_registry->add( 'shippingMethodsExist', CartCheckoutUtils::shipping_methods_exist() );
+ 
+ 		$is_block_editor = $this->is_block_editor();
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/Checkout.php b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/Checkout.php
+index cf6754d0f5ce73fd83eda482a88da356c23de42b..9690140670940c60dad0c8a8e75e17f0d17a91a2 100644
+--- a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/Checkout.php
++++ b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/Checkout.php
+@@ -138,6 +138,27 @@ class Checkout extends \WC_Unit_Test_Case {
+ 		$this->assertEquals( 'Changed pickup', $data_from_registry['localPickupText'] );
+ 	}
+ 
++	/**
++	 * @testdox Checkout is told whether to select the first pickup location, which woocommerce_blocks_preselect_pickup_location can turn off.
++	 */
++	public function test_enqueue_data_exposes_preselect_pickup_location(): void {
++		$checkout = new CheckoutMock( $this->asset_api, $this->registry, $this->integration_registry, 'checkout-mock' );
++
++		$checkout->mock_enqueue_data();
++		$this->assertTrue( $this->registry->get()['preselectPickupLocation'], 'The first pickup location is selected by default' );
++
++		add_filter( 'woocommerce_blocks_preselect_pickup_location', '__return_false' );
++		try {
++			\WP_Block_Type_Registry::get_instance()->unregister( 'woocommerce/checkout-mock' );
++			$registry = new AssetDataRegistryMock( $this->asset_api );
++			$checkout = new CheckoutMock( $this->asset_api, $registry, $this->integration_registry, 'checkout-mock' );
++			$checkout->mock_enqueue_data();
++		} finally {
++			remove_filter( 'woocommerce_blocks_preselect_pickup_location', '__return_false' );
++		}
++		$this->assertFalse( $registry->get()['preselectPickupLocation'], 'The filter should turn off pre-selection' );
++	}
++
+ 	/**
+ 	 * Overrides the WC logger.
+ 	 *

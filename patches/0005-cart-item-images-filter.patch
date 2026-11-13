@@ -1,0 +1,426 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/cart-line-item-row.tsx b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/cart-line-item-row.tsx
+index 0c026d06329e12e5ba57c6ebe7ff34779bebc765..da669ef56fc0362e541de86565911598f4e97043 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/cart-line-item-row.tsx
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/cart-line-items-table/cart-line-item-row.tsx
+@@ -32,7 +32,7 @@ import { USD } from 'dinero.js/currencies'; // USD is used as a placeholder curr
+  * Internal dependencies
+  */
+ import ProductBackorderBadge from '../product-backorder-badge';
+-import ProductImage from '../product-image';
++import ProductImages, { useCartItemImages } from '../product-images';
+ import ProductMetadata from '../product-metadata';
+ import ProductSaleBadge from '../product-sale-badge';
+ 
+@@ -192,7 +192,7 @@ const CartLineItemRow: React.ForwardRefExoticComponent<
+ 			scale: totalsCurrency.minorUnit,
+ 		} );
+ 
+-		const firstImage = images.length ? images[ 0 ] : {};
++		const displayImages = useCartItemImages( { images, extensions, arg } );
+ 		const isProductHiddenFromCatalog =
+ 			catalogVisibility === 'hidden' || catalogVisibility === 'search';
+ 
+@@ -253,16 +253,16 @@ const CartLineItemRow: React.ForwardRefExoticComponent<
+ 				{ /* Decorative image, hidden from screen readers so the row isn't announced as an empty "Product" cell. */ }
+ 				<td className="wc-block-cart-item__image" aria-hidden="true">
+ 					{ isProductHiddenFromCatalog ? (
+-						<ProductImage
+-							image={ firstImage }
++						<ProductImages
++							images={ displayImages }
+ 							fallbackAlt={ name }
+ 							width={ 80 }
+ 							height={ 80 }
+ 						/>
+ 					) : (
+ 						<a href={ permalink } tabIndex={ -1 }>
+-							<ProductImage
+-								image={ firstImage }
++							<ProductImages
++								images={ displayImages }
+ 								fallbackAlt={ name }
+ 								width={ 80 }
+ 								height={ 80 }
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/order-summary/order-summary-item.tsx b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/order-summary/order-summary-item.tsx
+index 9b2d22f9033814b1dc1c48309f32c360219d78d9..7722e098b24b00adfc109e5ee450aca3812d3b47 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/order-summary/order-summary-item.tsx
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/order-summary/order-summary-item.tsx
+@@ -27,7 +27,7 @@ import { USD } from 'dinero.js/currencies'; // USD is used as a placeholder curr
+  * Internal dependencies
+  */
+ import ProductBackorderBadge from '../product-backorder-badge';
+-import ProductImage from '../product-image';
++import ProductImages, { useCartItemImages } from '../product-images';
+ import ProductMetadata from '../product-metadata';
+ import ProductSaleBadge from '../product-sale-badge';
+ 
+@@ -69,6 +69,8 @@ const OrderSummaryItem = ( {
+ 		[ cartItem, cart ]
+ 	);
+ 
++	const displayImages = useCartItemImages( { images, extensions, arg } );
++
+ 	const priceCurrency = getCurrencyFromPriceResponse( prices );
+ 
+ 	const name = applyCheckoutFilter( {
+@@ -221,8 +223,8 @@ const OrderSummaryItem = ( {
+ 						) }
+ 					/>
+ 				</div>
+-				<ProductImage
+-					image={ images.length ? images[ 0 ] : {} }
++				<ProductImages
++					images={ displayImages }
+ 					fallbackAlt={ name }
+ 					width={ 48 }
+ 					height={ 48 }
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/index.tsx b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/index.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..31f1c5aab42306115505b253d4588c8b6c6d7e6b
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/index.tsx
+@@ -0,0 +1,139 @@
++/**
++ * External dependencies
++ */
++import { __, sprintf } from '@wordpress/i18n';
++import { useMemo } from '@wordpress/element';
++import { applyCheckoutFilter } from '@woocommerce/blocks-checkout';
++import type { CartImageItem, CartItem } from '@woocommerce/types';
++import type { ReactElement } from 'react';
++
++/**
++ * Internal dependencies
++ */
++import ProductImage from '../product-image';
++import './style.scss';
++
++/**
++ * Accepts only an array of image objects. Anything else keeps the default.
++ *
++ * @param value Value returned by the `cartItemImages` filter.
++ */
++export const cartItemImagesValidation = ( value: unknown ): true => {
++	if (
++		! Array.isArray( value ) ||
++		! value.every(
++			( image ) =>
++				!! image &&
++				typeof image === 'object' &&
++				! Array.isArray( image )
++		)
++	) {
++		throw new Error(
++			__(
++				'The cartItemImages filter must return an array of image objects.',
++				'woocommerce'
++			)
++		);
++	}
++	return true;
++};
++
++/**
++ * Returns the images to display for a cart item: the first image by default,
++ * or the list returned by the `cartItemImages` checkout filter.
++ *
++ * @param props            Hook arguments.
++ * @param props.images     All images of the cart item.
++ * @param props.extensions Extension data of the cart item.
++ * @param props.arg        Filter arguments (`context`, `cartItem`, `cart`).
++ */
++export const useCartItemImages = ( {
++	images,
++	extensions,
++	arg,
++}: {
++	images: CartItem[ 'images' ];
++	extensions: Record< string, unknown >;
++	arg: Record< string, unknown >;
++} ): CartImageItem[] => {
++	const defaultValue = useMemo(
++		() => ( images.length ? images.slice( 0, 1 ) : [] ),
++		[ images ]
++	);
++
++	return applyCheckoutFilter< CartImageItem[] >( {
++		filterName: 'cartItemImages',
++		defaultValue,
++		extensions,
++		arg,
++		validation: cartItemImagesValidation,
++	} );
++};
++
++interface ProductImagesProps {
++	images: CartImageItem[];
++	fallbackAlt: string;
++	width?: number;
++	height?: number;
++}
++
++/**
++ * Renders one product image, or a horizontally scrolling list when there is
++ * more than one. With zero or one image the markup matches `ProductImage`.
++ *
++ * @param props             Component props.
++ * @param props.images      Images to render.
++ * @param props.fallbackAlt Alt text used when an image has none.
++ * @param props.width       Display width of each image.
++ * @param props.height      Display height of each image.
++ */
++const ProductImages = ( {
++	images,
++	fallbackAlt,
++	width,
++	height,
++}: ProductImagesProps ): ReactElement => {
++	const sizeProps = {
++		...( width === undefined ? {} : { width } ),
++		...( height === undefined ? {} : { height } ),
++	};
++
++	if ( images.length < 2 ) {
++		return (
++			<ProductImage
++				image={ images[ 0 ] || {} }
++				fallbackAlt={ fallbackAlt }
++				{ ...sizeProps }
++			/>
++		);
++	}
++
++	return (
++		<ul
++			className="wc-block-components-product-images"
++			style={ width ? { width } : undefined }
++		>
++			{ images.map( ( image, index ) => (
++				<li
++					// Images may repeat, so the position is part of the key.
++					key={ `${ image.id }-${ index }` }
++					className="wc-block-components-product-images__item"
++				>
++					<ProductImage
++						image={ image }
++						fallbackAlt={ sprintf(
++							/* translators: 1: product name, 2: image number, 3: number of images. */
++							__( '%1$s, image %2$d of %3$d', 'woocommerce' ),
++							fallbackAlt,
++							index + 1,
++							images.length
++						) }
++						{ ...sizeProps }
++					/>
++				</li>
++			) ) }
++		</ul>
++	);
++};
++
++export default ProductImages;
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/style.scss b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/style.scss
+new file mode 100644
+index 0000000000000000000000000000000000000000..3f9dc1305b2b2dbada925a419d75d03f651f9d75
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/style.scss
+@@ -0,0 +1,24 @@
++.wc-block-components-product-images {
++	display: flex;
++	gap: 0;
++	list-style: none;
++	margin: 0;
++	max-width: 100%;
++	overflow-x: auto;
++	padding: 0;
++	scroll-snap-type: x mandatory;
++	scrollbar-width: thin;
++
++	.wc-block-components-product-images__item {
++		flex: 0 0 100%;
++		margin: 0;
++		padding: 0;
++		scroll-snap-align: start;
++
++		img {
++			display: block;
++			height: auto;
++			max-width: 100%;
++		}
++	}
++}
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/test/index.tsx b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/test/index.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ad6683952c4c9e0b25ffe6d07292a6c58b30cb8
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/components/cart-checkout/product-images/test/index.tsx
+@@ -0,0 +1,169 @@
++/**
++ * External dependencies
++ */
++import { render, renderHook, screen } from '@testing-library/react';
++import { registerCheckoutFilters } from '@woocommerce/blocks-checkout';
++import type { CartImageItem, CartItem } from '@woocommerce/types';
++
++/**
++ * Internal dependencies
++ */
++import ProductImages, { cartItemImagesValidation, useCartItemImages } from '..';
++
++const buildImage = ( id: number ): CartImageItem => ( {
++	id,
++	src: `https://example.org/${ id }.jpg`,
++	thumbnail: `https://example.org/${ id }-thumb.jpg`,
++	srcset: '',
++	sizes: '',
++	thumbnail_srcset: '',
++	thumbnail_sizes: '',
++	name: `${ id }.jpg`,
++	alt: `Image ${ id }`,
++} );
++
++const images = [ buildImage( 1 ), buildImage( 2 ), buildImage( 3 ) ];
++
++const buildArg = ( key: string, context = 'cart' ) => ( {
++	context,
++	cartItem: { key, images } as unknown as CartItem,
++} );
++
++describe( 'ProductImages', () => {
++	it( 'renders a single image without a list', () => {
++		const { container } = render(
++			<ProductImages images={ [ images[ 0 ] ] } fallbackAlt="Hoodie" />
++		);
++
++		expect( container.querySelector( 'ul' ) ).toBeNull();
++		expect( screen.getAllByRole( 'img' ) ).toHaveLength( 1 );
++		expect( screen.getByRole( 'img' ) ).toHaveAttribute(
++			'src',
++			images[ 0 ].thumbnail
++		);
++	} );
++
++	it( 'renders the placeholder when there are no images', () => {
++		const { container } = render(
++			<ProductImages images={ [] } fallbackAlt="Hoodie" />
++		);
++
++		expect( container.querySelector( 'ul' ) ).toBeNull();
++		expect( container.querySelectorAll( 'img' ) ).toHaveLength( 1 );
++	} );
++
++	it( 'renders a list when there is more than one image', () => {
++		const { container } = render(
++			<ProductImages images={ images } fallbackAlt="Hoodie" />
++		);
++
++		const list = container.querySelector(
++			'ul.wc-block-components-product-images'
++		);
++		expect( list ).not.toBeNull();
++		expect(
++			list?.querySelectorAll(
++				'.wc-block-components-product-images__item'
++			)
++		).toHaveLength( 3 );
++		expect(
++			screen
++				.getAllByRole( 'img' )
++				.map( ( img ) => img.getAttribute( 'src' ) )
++		).toEqual( images.map( ( image ) => image.thumbnail ) );
++	} );
++} );
++
++describe( 'cartItemImagesValidation', () => {
++	it( 'accepts an array of image objects', () => {
++		expect( cartItemImagesValidation( images ) ).toBe( true );
++		expect( cartItemImagesValidation( [] ) ).toBe( true );
++	} );
++
++	it.each( [
++		[ 'an object', { 0: images[ 0 ] } ],
++		[ 'an array of strings', [ 'a.jpg' ] ],
++		[ 'an array containing null', [ images[ 0 ], null ] ],
++	] )( 'rejects %s', ( _label, value ) => {
++		expect( () => cartItemImagesValidation( value ) ).toThrow();
++	} );
++} );
++
++describe( 'useCartItemImages', () => {
++	it( 'returns the first image when no filter changes it', () => {
++		const { result } = renderHook( () =>
++			useCartItemImages( {
++				images,
++				extensions: {},
++				arg: buildArg( 'no-filter' ),
++			} )
++		);
++
++		expect( result.current ).toEqual( [ images[ 0 ] ] );
++	} );
++
++	it( 'returns an empty list for an item without images', () => {
++		const { result } = renderHook( () =>
++			useCartItemImages( {
++				images: [],
++				extensions: {},
++				arg: buildArg( 'no-images' ),
++			} )
++		);
++
++		expect( result.current ).toEqual( [] );
++	} );
++
++	it( 'returns the images chosen by the cartItemImages filter, with its arguments', () => {
++		const filter = jest.fn(
++			(
++				defaultValue: CartImageItem[],
++				extensions: Record< string, unknown >,
++				args: ReturnType< typeof buildArg >
++			) =>
++				extensions.example
++					? args.cartItem.images.slice( 0, 2 )
++					: defaultValue
++		);
++		registerCheckoutFilters( 'product-images-test', {
++			cartItemImages: filter as never,
++		} );
++
++		const arg = buildArg( 'filtered', 'summary' );
++		const { result } = renderHook( () =>
++			useCartItemImages( {
++				images,
++				extensions: { example: true },
++				arg,
++			} )
++		);
++
++		expect( result.current ).toEqual( [ images[ 0 ], images[ 1 ] ] );
++		expect( filter ).toHaveBeenCalledWith(
++			[ images[ 0 ] ],
++			{ example: true },
++			arg
++		);
++	} );
++
++	it( 'keeps the default when the filter returns an invalid value', () => {
++		const consoleError = jest
++			.spyOn( console, 'error' )
++			.mockImplementation( () => undefined );
++		registerCheckoutFilters( 'product-images-test-invalid', {
++			cartItemImages: () => [ 'not-an-image' ],
++		} );
++
++		const { result } = renderHook( () =>
++			useCartItemImages( {
++				images,
++				extensions: {},
++				arg: buildArg( 'invalid' ),
++			} )
++		);
++
++		expect( result.current ).toEqual( [ images[ 0 ] ] );
++		expect( consoleError ).toHaveBeenCalled();
++		consoleError.mockRestore();
++	} );
++} );

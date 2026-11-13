@@ -1,0 +1,578 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart-snapshot.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart-snapshot.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..a577a82fa1d2437b59808da98a3fdb861e887001
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart-snapshot.ts
+@@ -0,0 +1,189 @@
++/**
++ * External dependencies
++ */
++import type { CartResponseTotals } from '@woocommerce/types';
++
++/**
++ * Persists a minimal cart summary (item count, weight and totals) to
++ * localStorage so the Mini-Cart can show the shopper's real count and subtotal
++ * on the first paint of a page rendered without per-user data, for example a
++ * page served from a shared cache. The live `GET /cart` refresh always runs
++ * afterwards and replaces the seeded values.
++ *
++ * Only aggregate values are stored: no line items, addresses or other
++ * personal data.
++ */
++
++export const CART_SNAPSHOT_STORAGE_KEY = 'wcBlocksCartSnapshot';
++
++/**
++ * Snapshots older than this are ignored. Matches the default WooCommerce
++ * session expiration (48 hours).
++ */
++export const CART_SNAPSHOT_MAX_AGE = 2 * 24 * 60 * 60 * 1000;
++
++/**
++ * Cookie WooCommerce sets while the session has a non-empty cart and clears
++ * when the cart is emptied, the order is placed or the session ends.
++ */
++const ITEMS_IN_CART_COOKIE = 'woocommerce_items_in_cart';
++
++export type CartSnapshot = {
++	items_count: number;
++	items_weight: number;
++	totals: CartResponseTotals;
++	saved_at: number;
++};
++
++/**
++ * The Store API cart response (snake_case). Typed loosely because the iAPI
++ * store holds the raw response under the camelCase `Cart` type.
++ */
++type CartLike = {
++	items?: unknown;
++	items_count?: unknown;
++	items_weight?: unknown;
++	totals?: unknown;
++};
++
++const getStorage = (): Storage | null => {
++	try {
++		return window.localStorage ?? null;
++	} catch {
++		// Accessing localStorage throws when storage is disabled.
++		return null;
++	}
++};
++
++export const hasCartSessionCookie = (): boolean => {
++	try {
++		return document.cookie.split( ';' ).some( ( cookie ) => {
++			const [ name, value ] = cookie.split( '=' );
++			return (
++				name.trim() === ITEMS_IN_CART_COOKIE &&
++				!! value?.trim() &&
++				value.trim() !== '0'
++			);
++		} );
++	} catch {
++		return false;
++	}
++};
++
++export const clearCartSnapshot = (): void => {
++	try {
++		getStorage()?.removeItem( CART_SNAPSHOT_STORAGE_KEY );
++	} catch {}
++};
++
++/**
++ * Saves the summary of a server cart response, or clears it when the cart is
++ * empty. Best-effort: storage errors (private mode, quota) are ignored.
++ *
++ * @param cart Cart returned by the Store API.
++ */
++export const saveCartSnapshot = ( cart: CartLike | null | undefined ): void => {
++	if ( ! cart || ! ( Number( cart.items_count ) > 0 ) || ! cart.totals ) {
++		clearCartSnapshot();
++		return;
++	}
++
++	const snapshot: CartSnapshot = {
++		items_count: Number( cart.items_count ),
++		items_weight: Number( cart.items_weight ) || 0,
++		totals: cart.totals as CartResponseTotals,
++		saved_at: Date.now(),
++	};
++
++	try {
++		getStorage()?.setItem(
++			CART_SNAPSHOT_STORAGE_KEY,
++			JSON.stringify( snapshot )
++		);
++	} catch {}
++};
++
++/**
++ * Returns the stored snapshot when it is still trustworthy: the cart cookie
++ * says the session has items, and the snapshot is well-formed and recent.
++ * Clears snapshots that fail these checks.
++ */
++export const readCartSnapshot = (): CartSnapshot | null => {
++	const storage = getStorage();
++	if ( ! storage ) {
++		return null;
++	}
++
++	let raw: string | null = null;
++	try {
++		raw = storage.getItem( CART_SNAPSHOT_STORAGE_KEY );
++	} catch {
++		return null;
++	}
++
++	if ( ! raw ) {
++		return null;
++	}
++
++	if ( ! hasCartSessionCookie() ) {
++		clearCartSnapshot();
++		return null;
++	}
++
++	let parsed: Partial< CartSnapshot > | null = null;
++	try {
++		parsed = JSON.parse( raw );
++	} catch {
++		parsed = null;
++	}
++
++	const isValid =
++		!! parsed &&
++		typeof parsed === 'object' &&
++		typeof parsed.items_count === 'number' &&
++		parsed.items_count > 0 &&
++		typeof parsed.saved_at === 'number' &&
++		Date.now() - parsed.saved_at < CART_SNAPSHOT_MAX_AGE &&
++		!! parsed.totals &&
++		typeof parsed.totals === 'object';
++
++	if ( ! isValid ) {
++		clearCartSnapshot();
++		return null;
++	}
++
++	return parsed as CartSnapshot;
++};
++
++/**
++ * Copies the stored summary onto a cart the server rendered empty.
++ *
++ * Only scalar fields are seeded: seeding `items` would mismatch the empty
++ * `data-wp-each` templates the server rendered.
++ *
++ * @param cart Cart state to seed in place.
++ * @return Whether the cart was seeded.
++ */
++export const seedCartFromSnapshot = ( cart: CartLike | undefined ): boolean => {
++	if (
++		! cart ||
++		! Array.isArray( cart.items ) ||
++		cart.items.length > 0 ||
++		Number( cart.items_count ) > 0
++	) {
++		return false;
++	}
++
++	const snapshot = readCartSnapshot();
++	if ( ! snapshot ) {
++		return false;
++	}
++
++	cart.items_count = snapshot.items_count;
++	cart.items_weight = snapshot.items_weight;
++	cart.totals = {
++		...( cart.totals as CartResponseTotals | undefined ),
++		...snapshot.totals,
++	};
++	return true;
++};
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+index b35e53b93b38a32d298080745ee79af07dd7286e..0f364caeadd2ae90338f0274115c5ce0387ca7b3 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/cart.ts
+@@ -27,6 +27,7 @@ import {
+ 	type MutationQueue,
+ 	type MutationResult,
+ } from './mutation-batcher';
++import { saveCartSnapshot, seedCartFromSnapshot } from './cart-snapshot';
+ import { doesCartItemMatchAttributes } from '../../utils/variations/does-cart-item-match-attributes';
+ 
+ export type WooCommerceConfig = {
+@@ -93,6 +94,12 @@ export type Store = {
+ 		nonce: string;
+ 		// Whether a cart update request is in progress.
+ 		isCartUpdating?: boolean;
++		/**
++		 * True while `cart` holds a summary seeded from localStorage rather
++		 * than a server response: `items_count` and `totals` are real, but
++		 * `items` is still empty.
++		 */
++		isCartSeeded?: boolean;
+ 		findItemInCart: ( args: {
+ 			id: ClientCartItem[ 'id' ];
+ 			key?: ClientCartItem[ 'key' ];
+@@ -579,6 +586,8 @@ async function sendCartRequest(
+ 			// already resyncs the data store after a mutation.
+ 			commit: ( serverState ) => {
+ 				stateRef.cart = serverState;
++				stateRef.isCartSeeded = false;
++				saveCartSnapshot( serverState );
+ 			},
+ 			onProcessingChange: ( isProcessing ) => {
+ 				stateRef.isCartUpdating = isProcessing;
+@@ -658,6 +667,12 @@ const universalLock =
+ 
+ // Todo: export this store once the store is public.
+ const { state } = store< Store >( 'woocommerce', {}, { lock: universalLock } );
++
++// Pages rendered without per-user data (e.g. served from a shared cache) ship
++// an empty cart. Show the last known count and totals until the refresh below
++// returns the live cart.
++state.isCartSeeded = seedCartFromSnapshot( state.cart );
++
+ const { actions } = store< Store >(
+ 	'woocommerce',
+ 	{
+@@ -1295,6 +1310,8 @@ const { actions } = store< Store >(
+ 
+ 					// Updates the local cart.
+ 					state.cart = json;
++					state.isCartSeeded = false;
++					saveCartSnapshot( json );
+ 
+ 					pushCartToReduxStore( json );
+ 					settleInitialCart( json );
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart-snapshot.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart-snapshot.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..05e91943d4fd0bcd8f66622250181df8830835d1
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart-snapshot.ts
+@@ -0,0 +1,181 @@
++/**
++ * External dependencies
++ */
++import type { CartResponseTotals } from '@woocommerce/types';
++
++/**
++ * Internal dependencies
++ */
++import {
++	CART_SNAPSHOT_MAX_AGE,
++	CART_SNAPSHOT_STORAGE_KEY,
++	hasCartSessionCookie,
++	readCartSnapshot,
++	saveCartSnapshot,
++	seedCartFromSnapshot,
++} from '../cart-snapshot';
++
++const totals = {
++	total_items: '2000',
++	total_price: '2300',
++	currency_code: 'USD',
++} as unknown as CartResponseTotals;
++
++const setItemsInCartCookie = () => {
++	document.cookie = 'woocommerce_items_in_cart=1; path=/';
++};
++
++const clearItemsInCartCookie = () => {
++	document.cookie =
++		'woocommerce_items_in_cart=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
++};
++
++const emptyCart = () => ( {
++	items: [] as unknown[],
++	items_count: 0,
++	items_weight: 0,
++	totals: { currency_code: 'USD' } as unknown as CartResponseTotals,
++} );
++
++describe( 'cart snapshot', () => {
++	beforeEach( () => {
++		window.localStorage.clear();
++		clearItemsInCartCookie();
++	} );
++
++	afterEach( () => {
++		jest.restoreAllMocks();
++	} );
++
++	describe( 'hasCartSessionCookie', () => {
++		it( 'is true only while the items-in-cart cookie is set', () => {
++			expect( hasCartSessionCookie() ).toBe( false );
++			setItemsInCartCookie();
++			expect( hasCartSessionCookie() ).toBe( true );
++		} );
++	} );
++
++	describe( 'saveCartSnapshot', () => {
++		it( 'stores only the aggregate fields', () => {
++			saveCartSnapshot( {
++				items_count: 3,
++				items_weight: 1.5,
++				totals,
++				// Extra fields from the full cart response must not be stored.
++				billing_address: { email: 'shopper@example.com' },
++				items: [ { name: 'Hoodie' } ],
++			} as never );
++
++			const stored = JSON.parse(
++				window.localStorage.getItem( CART_SNAPSHOT_STORAGE_KEY ) || ''
++			);
++			expect( Object.keys( stored ).sort() ).toEqual( [
++				'items_count',
++				'items_weight',
++				'saved_at',
++				'totals',
++			] );
++			expect( stored.items_count ).toBe( 3 );
++			expect( stored.totals ).toEqual( totals );
++		} );
++
++		it( 'clears the snapshot when the cart is empty', () => {
++			saveCartSnapshot( { items_count: 2, items_weight: 0, totals } );
++			saveCartSnapshot( { items_count: 0, items_weight: 0, totals } );
++
++			expect(
++				window.localStorage.getItem( CART_SNAPSHOT_STORAGE_KEY )
++			).toBeNull();
++		} );
++
++		it( 'ignores storage errors', () => {
++			jest.spyOn( Storage.prototype, 'setItem' ).mockImplementation(
++				() => {
++					throw new Error( 'QuotaExceededError' );
++				}
++			);
++
++			expect( () =>
++				saveCartSnapshot( { items_count: 1, items_weight: 0, totals } )
++			).not.toThrow();
++		} );
++	} );
++
++	describe( 'readCartSnapshot', () => {
++		it( 'returns a saved snapshot while the cart cookie is set', () => {
++			setItemsInCartCookie();
++			saveCartSnapshot( { items_count: 2, items_weight: 0, totals } );
++
++			expect( readCartSnapshot() ).toMatchObject( {
++				items_count: 2,
++				totals,
++			} );
++		} );
++
++		it( 'returns null and clears the snapshot without the cart cookie', () => {
++			saveCartSnapshot( { items_count: 2, items_weight: 0, totals } );
++
++			expect( readCartSnapshot() ).toBeNull();
++			expect(
++				window.localStorage.getItem( CART_SNAPSHOT_STORAGE_KEY )
++			).toBeNull();
++		} );
++
++		it( 'returns null for an expired snapshot', () => {
++			setItemsInCartCookie();
++			saveCartSnapshot( { items_count: 2, items_weight: 0, totals } );
++			jest.spyOn( Date, 'now' ).mockReturnValue(
++				Date.now() + CART_SNAPSHOT_MAX_AGE + 1
++			);
++
++			expect( readCartSnapshot() ).toBeNull();
++		} );
++
++		it( 'returns null for malformed data', () => {
++			setItemsInCartCookie();
++			window.localStorage.setItem( CART_SNAPSHOT_STORAGE_KEY, '{oops' );
++			expect( readCartSnapshot() ).toBeNull();
++
++			window.localStorage.setItem(
++				CART_SNAPSHOT_STORAGE_KEY,
++				JSON.stringify( { items_count: '2', totals } )
++			);
++			expect( readCartSnapshot() ).toBeNull();
++		} );
++	} );
++
++	describe( 'seedCartFromSnapshot', () => {
++		it( 'seeds count and totals onto an empty server cart, not items', () => {
++			setItemsInCartCookie();
++			saveCartSnapshot( { items_count: 4, items_weight: 2, totals } );
++			const cart = emptyCart();
++
++			expect( seedCartFromSnapshot( cart ) ).toBe( true );
++			expect( cart.items ).toEqual( [] );
++			expect( cart.items_count ).toBe( 4 );
++			expect( cart.items_weight ).toBe( 2 );
++			expect( cart.totals ).toMatchObject( totals );
++		} );
++
++		it( 'does not touch a cart the server rendered with items', () => {
++			setItemsInCartCookie();
++			saveCartSnapshot( { items_count: 4, items_weight: 0, totals } );
++			const cart = {
++				...emptyCart(),
++				items: [ { key: 'abc', quantity: 1 } ],
++				items_count: 1,
++			};
++
++			expect( seedCartFromSnapshot( cart ) ).toBe( false );
++			expect( cart.items_count ).toBe( 1 );
++		} );
++
++		it( 'does nothing without a valid snapshot', () => {
++			const cart = emptyCart();
++
++			expect( seedCartFromSnapshot( cart ) ).toBe( false );
++			expect( seedCartFromSnapshot( undefined ) ).toBe( false );
++			expect( cart.items_count ).toBe( 0 );
++		} );
++	} );
++} );
+diff --git a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+index cb2b5aded60af12cb855e137dd4b28d2d8460f7b..7257e705f9302575d8fcbd8c46bcbc29cc3fd127 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/base/stores/woocommerce/test/cart.ts
+@@ -575,6 +575,119 @@ describe( 'WooCommerce Cart Interactivity API Store', () => {
+ 		} );
+ 	} );
+ 
++	describe( 'cart snapshot for pages rendered without cart data', () => {
++		const totals = { total_items: '1500', currency_code: 'USD' };
++
++		beforeEach( () => {
++			window.localStorage.clear();
++			document.cookie = 'woocommerce_items_in_cart=1; path=/';
++		} );
++
++		afterEach( () => {
++			window.localStorage.clear();
++			document.cookie =
++				'woocommerce_items_in_cart=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
++			delete ( mockState as Partial< Store[ 'state' ] > ).isCartSeeded;
++		} );
++
++		it( 'seeds an empty server cart from the snapshot, then replaces it with the live cart', async () => {
++			window.localStorage.setItem(
++				'wcBlocksCartSnapshot',
++				JSON.stringify( {
++					items_count: 3,
++					items_weight: 0,
++					totals,
++					saved_at: Date.now(),
++				} )
++			);
++			mockState.cart = {
++				items: [],
++				items_count: 0,
++				items_weight: 0,
++				totals: { currency_code: 'USD' },
++			} as unknown as Store[ 'state' ][ 'cart' ];
++
++			// Hold the refresh so the seeded state can be asserted first.
++			let respond: ( response: Response ) => void = () => {};
++			global.fetch = jest.fn(
++				() =>
++					new Promise< Response >( ( resolve ) => {
++						respond = resolve;
++					} )
++			) as unknown as typeof fetch;
++
++			jest.isolateModules( () => require( '../cart' ) );
++
++			expect( mockState.isCartSeeded ).toBe( true );
++			expect( mockState.cart.items ).toEqual( [] );
++			expect( mockState.cart.items_count ).toBe( 3 );
++			expect( mockState.cart.totals ).toMatchObject( totals );
++
++			const refresh = runAction(
++				mockRegisteredStore?.actions.refreshCartItems()
++			);
++			respond(
++				new Response(
++					JSON.stringify( {
++						items: [ { key: 'a', quantity: 2 } ],
++						items_count: 2,
++						items_weight: 0,
++						totals: { total_items: '1000', currency_code: 'USD' },
++						errors: [],
++					} ),
++					{ headers: { Nonce: 'test-nonce-123' } }
++				)
++			);
++			await refresh;
++
++			expect( mockState.isCartSeeded ).toBe( false );
++			expect( mockState.cart.items_count ).toBe( 2 );
++			expect(
++				JSON.parse(
++					window.localStorage.getItem( 'wcBlocksCartSnapshot' ) || ''
++				)
++			).toMatchObject( { items_count: 2 } );
++		} );
++
++		it( 'clears the snapshot when the live cart is empty', async () => {
++			window.localStorage.setItem(
++				'wcBlocksCartSnapshot',
++				JSON.stringify( {
++					items_count: 3,
++					items_weight: 0,
++					totals,
++					saved_at: Date.now(),
++				} )
++			);
++			mockState.cart = {
++				items: [],
++				items_count: 0,
++				totals: {},
++			} as unknown as Store[ 'state' ][ 'cart' ];
++			global.fetch = jest.fn(
++				async () =>
++					new Response(
++						JSON.stringify( {
++							items: [],
++							items_count: 0,
++							totals: {},
++							errors: [],
++						} ),
++						{ headers: { Nonce: 'test-nonce-123' } }
++					)
++			) as unknown as typeof fetch;
++
++			jest.isolateModules( () => require( '../cart' ) );
++			await runAction( mockRegisteredStore?.actions.refreshCartItems() );
++
++			expect( mockState.isCartSeeded ).toBe( false );
++			expect( mockState.cart.items_count ).toBe( 0 );
++			expect(
++				window.localStorage.getItem( 'wcBlocksCartSnapshot' )
++			).toBeNull();
++		} );
++	} );
++
+ 	describe( 'addCartItem endpoint selection', () => {
+ 		it( 'issues add-item (never update-item) for a keyless add that matches a keyed line by product id', async () => {
+ 			const captured = mockBatchFetch();
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
+index 2be45222e57edac51f5b09577ebea77c51f4c3e9..1738910ac3208089ec1b97514273443a497b73d7 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
+@@ -209,7 +209,10 @@ store< MiniCart >(
+ 		state: {
+ 			isHydrated: false,
+ 			get totalItemsInCart() {
+-				if ( nonOptimisticProperties.includes( 'cart.items_count' ) ) {
++				if (
++					nonOptimisticProperties.includes( 'cart.items_count' ) ||
++					woocommerceState.isCartSeeded
++				) {
+ 					return woocommerceState.cart.items_count as number;
+ 				}
+ 				return woocommerceState.cart.items.reduce< number >(

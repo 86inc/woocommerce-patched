@@ -1,0 +1,768 @@
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
+index 1738910ac3208089ec1b97514273443a497b73d7..4773a28b28f051a1748fc627631ef757b612f323 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts
+@@ -24,7 +24,7 @@ import {
+ /**
+  * Internal dependencies
+  */
+-import type { CartItem, Currency } from '@woocommerce/types';
++import type { CartImageItem, CartItem, Currency } from '@woocommerce/types';
+ import { translateJQueryEventToNative } from '../../base/stores/woocommerce/legacy-events';
+ import {
+ 	getEntryFieldRaw,
+@@ -33,6 +33,11 @@ import {
+ 	buildCartItemDataAttr,
+ } from './utils/item-data';
+ import type { ItemData, CartItemDataAttr } from './utils/item-data';
++import {
++	getCartItemImages,
++	getItemImageAlt,
++	type ApplyCheckoutFilter,
++} from './utils/item-images';
+ 
+ const universalLock =
+ 	'I acknowledge that using a private store means my plugin will inevitably break on the next store release.';
+@@ -53,6 +58,7 @@ const {
+ 	increaseQuantityLabel,
+ 	quantityDescriptionLabel,
+ 	removeFromCartLabel,
++	itemImageAltTemplate = '%1$s, image %2$d of %3$d',
+ } = getConfig( 'woocommerce/mini-cart-products-table-block' );
+ const { itemsInCartTextTemplate } = getConfig(
+ 	'woocommerce/mini-cart-title-items-counter-block'
+@@ -616,26 +622,121 @@ const { state: cartItemState } = store(
+ 				return txt.value;
+ 			},
+ 
++			// The images to show: the first one, or the `cartItemImages`
++			// checkout filter's list.
++			get itemImages(): CartImageItem[] {
++				const { cartItem } = cartItemState;
++				return getCartItemImages( {
++					images: cartItem.images,
++					extensions: cartItem.extensions,
++					arg: {
++						context: 'cart',
++						cartItem,
++						cart: woocommerceState.cart,
++					},
++					applyFilter:
++						// eslint-disable-next-line @typescript-eslint/no-explicit-any
++						( window.wc as any )?.blocksCheckout
++							?.applyCheckoutFilter as
++							ApplyCheckoutFilter | undefined,
++				} );
++			},
++
++			get hasMultipleImages(): boolean {
++				return cartItemState.itemImages.length > 1;
++			},
++
+ 			get itemThumbnail(): string {
+ 				return (
+-					cartItemState.cartItem.images[ 0 ]?.thumbnail ||
++					cartItemState.itemImages[ 0 ]?.thumbnail ||
+ 					placeholderImgSrc ||
+ 					''
+ 				);
+ 			},
+ 
+ 			get itemSrcset(): string {
+-				return (
+-					cartItemState.cartItem.images[ 0 ]?.thumbnail_srcset || ''
+-				);
++				return cartItemState.itemImages[ 0 ]?.thumbnail_srcset || '';
+ 			},
+ 
+ 			get itemSizes(): string {
+-				return cartItemState.cartItem.images[ 0 ]?.thumbnail_srcset
++				return cartItemState.itemImages[ 0 ]?.thumbnail_srcset
+ 					? '64px'
+ 					: '';
+ 			},
+ 
++			// The single image is replaced by the list when there are more.
++			get isLinkedImageHidden(): boolean {
++				const context = getContext< { isImageHidden: boolean } >();
++				return context.isImageHidden || cartItemState.hasMultipleImages;
++			},
++
++			// Bound negated (`!state.…`) so the server, which has no value
++			// for these, renders them hidden as before.
++			get isUnlinkedImageShown(): boolean {
++				return (
++					cartItemState.isProductHiddenFromCatalog &&
++					! cartItemState.hasMultipleImages
++				);
++			},
++
++			get isUnlinkedImageListShown(): boolean {
++				return (
++					cartItemState.isProductHiddenFromCatalog &&
++					cartItemState.hasMultipleImages
++				);
++			},
++
++			// The image of the current `wp-each--item-image` iteration.
++			get listImage(): Partial< CartImageItem > {
++				const { itemImage } = getContext< {
++					itemImage: CartImageItem;
++				} >();
++				return itemImage || {};
++			},
++
++			// Matched by value: the context copy is not the same object.
++			get listImageIndex(): number {
++				const { id, thumbnail } = cartItemState.listImage;
++				return Math.max(
++					cartItemState.itemImages.findIndex(
++						( image ) =>
++							image.id === id && image.thumbnail === thumbnail
++					),
++					0
++				);
++			},
++
++			get listImageKey(): string {
++				const { id, thumbnail } = cartItemState.listImage;
++				return `${ id ?? '' }-${ thumbnail ?? '' }`;
++			},
++
++			get listImageSrc(): string {
++				return (
++					cartItemState.listImage.thumbnail || placeholderImgSrc || ''
++				);
++			},
++
++			get listImageSrcset(): string {
++				return cartItemState.listImage.thumbnail_srcset || '';
++			},
++
++			get listImageSizes(): string {
++				return cartItemState.listImage.thumbnail_srcset ? '64px' : '';
++			},
++
++			get listImageAlt(): string {
++				const txt = document.createElement( 'textarea' );
++				txt.innerHTML = getItemImageAlt( {
++					image: cartItemState.listImage,
++					template: itemImageAltTemplate,
++					name: cartItemState.cartItemName,
++					index: cartItemState.listImageIndex,
++					total: cartItemState.itemImages.length,
++				} );
++				return txt.value;
++			},
++
+ 			get priceWithoutDiscount(): string {
+ 				const { raw_prices: rawPrices } = cartItemState.cartItem.prices;
+ 				const priceWithoutDiscount = scalePrice( {
+@@ -956,6 +1057,10 @@ const { state: cartItemState } = store(
+ 				const context = getContext< { isImageHidden: boolean } >();
+ 				context.isImageHidden = true;
+ 			},
++
++			hideListImage( event: Event ) {
++				( event.target as HTMLElement ).hidden = true;
++			},
+ 		},
+ 
+ 		callbacks: {
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/mini-cart-contents/style.scss b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/mini-cart-contents/style.scss
+index df22722b20f722d4e1d4324c42839c3c9ad84aea..45947e17a549e64c12f3cacbe03da728515603ba 100644
+--- a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/mini-cart-contents/style.scss
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/mini-cart-contents/style.scss
+@@ -116,6 +116,37 @@ h2.wc-block-mini-cart__title {
+ 				content: none;
+ 			}
+ 		}
++
++		// Shown instead of the single image when a cart item has several
++		// images: one image at a time, swiped or scrolled horizontally.
++		.wc-block-components-product-images {
++			display: flex;
++			list-style: none;
++			margin: 0;
++			max-width: 100%;
++			overflow-x: auto;
++			padding: 0;
++			scroll-snap-type: x mandatory;
++			scrollbar-width: thin;
++
++			&[hidden],
++			img[hidden] {
++				display: none;
++			}
++		}
++
++		.wc-block-components-product-images__item {
++			flex: 0 0 100%;
++			margin: 0;
++			padding: 0;
++			scroll-snap-align: start;
++
++			img {
++				display: block;
++				height: auto;
++				max-width: 100%;
++			}
++		}
+ 	}
+ }
+ 
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/item-images.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/item-images.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d130a8fa056cd682f1f9bd09b289badeb658f453
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/item-images.ts
+@@ -0,0 +1,125 @@
++/**
++ * Framework-free helpers that choose the images a Mini-Cart line item shows.
++ *
++ * Like `item-data.ts`, this module has no side effects and does not import
++ * `@wordpress/interactivity`, so it can be unit-tested without mocks.
++ */
++
++/**
++ * External dependencies
++ */
++import type { CartImageItem } from '@woocommerce/types';
++
++type FilterOptions = {
++	filterName: string;
++	defaultValue: CartImageItem[];
++	extensions?: Record< string, unknown > | null | undefined;
++	arg?: Record< string, unknown > | null;
++	validation?: ( value: CartImageItem[] ) => true | Error;
++};
++
++/**
++ * Shape of `wc.blocksCheckout.applyCheckoutFilter`, which may not be loaded.
++ */
++export type ApplyCheckoutFilter = ( options: FilterOptions ) => CartImageItem[];
++
++/**
++ * Whether a value is an array of image objects.
++ *
++ * @param value Value to check.
++ */
++export const isCartItemImageList = (
++	value: unknown
++): value is CartImageItem[] =>
++	Array.isArray( value ) &&
++	value.every(
++		( image ) =>
++			!! image && typeof image === 'object' && ! Array.isArray( image )
++	);
++
++/**
++ * Throws when a `cartItemImages` filter returns something other than an array
++ * of image objects, so the filter registry keeps the previous value.
++ *
++ * @param value Value returned by the filter.
++ */
++export const cartItemImagesValidation = ( value: unknown ): true => {
++	if ( ! isCartItemImageList( value ) ) {
++		throw new Error(
++			'The cartItemImages filter must return an array of image objects.'
++		);
++	}
++	return true;
++};
++
++/**
++ * Returns the images to show for a cart item: its first image by default, or
++ * the list returned by the `cartItemImages` checkout filter.
++ *
++ * @param props             Arguments.
++ * @param props.images      All images of the cart item.
++ * @param props.extensions  Extension data of the cart item.
++ * @param props.arg         Filter arguments (`context`, `cartItem`, `cart`).
++ * @param props.applyFilter `applyCheckoutFilter`, when the script is loaded.
++ */
++export const getCartItemImages = ( {
++	images,
++	extensions,
++	arg,
++	applyFilter,
++}: {
++	images: CartImageItem[] | undefined;
++	extensions?: Record< string, unknown > | undefined;
++	arg: Record< string, unknown >;
++	applyFilter?: ApplyCheckoutFilter | undefined;
++} ): CartImageItem[] => {
++	// No images array means no real cart item yet (e.g. an empty template row).
++	if ( ! Array.isArray( images ) ) {
++		return [];
++	}
++	const defaultValue = images.slice( 0, 1 );
++	if ( typeof applyFilter !== 'function' ) {
++		return defaultValue;
++	}
++	const value = applyFilter( {
++		filterName: 'cartItemImages',
++		defaultValue,
++		extensions,
++		arg,
++		validation: cartItemImagesValidation,
++	} );
++	return isCartItemImageList( value ) ? value : defaultValue;
++};
++
++/**
++ * Alt text for one image in a list: the image's own alt, or the template
++ * filled with the product name and the image's position.
++ *
++ * @param props          Arguments.
++ * @param props.image    The image.
++ * @param props.template Translated `%1$s, image %2$d of %3$d` template.
++ * @param props.name     Product name.
++ * @param props.index    Zero-based position of the image.
++ * @param props.total    Number of images.
++ */
++export const getItemImageAlt = ( {
++	image,
++	template,
++	name,
++	index,
++	total,
++}: {
++	image: Partial< CartImageItem > | undefined;
++	template: string;
++	name: string;
++	index: number;
++	total: number;
++} ): string => {
++	if ( image?.alt ) {
++		return image.alt;
++	}
++	return template
++		.replace( '%1$s', name )
++		.replace( '%2$d', String( index + 1 ) )
++		.replace( '%3$d', String( total ) );
++};
+diff --git a/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/test/item-images.ts b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/test/item-images.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..486c666af10c1184b1957dc65e0bf1e0bcd989ab
+--- /dev/null
++++ b/plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/test/item-images.ts
+@@ -0,0 +1,194 @@
++/**
++ * External dependencies
++ */
++import {
++	applyCheckoutFilter,
++	registerCheckoutFilters,
++} from '@woocommerce/blocks-checkout';
++import type { CartImageItem } from '@woocommerce/types';
++
++/**
++ * Internal dependencies
++ */
++import {
++	cartItemImagesValidation,
++	getCartItemImages,
++	getItemImageAlt,
++	isCartItemImageList,
++	type ApplyCheckoutFilter,
++} from '../item-images';
++
++const image = ( id: number, alt = '' ): CartImageItem => ( {
++	id,
++	src: `https://example.com/${ id }.jpg`,
++	thumbnail: `https://example.com/${ id }-thumb.jpg`,
++	srcset: '',
++	sizes: '',
++	thumbnail_srcset: '',
++	thumbnail_sizes: '',
++	name: `${ id }.jpg`,
++	alt,
++} );
++
++const arg = { context: 'cart', cartItem: { key: 'abc' }, cart: {} };
++
++describe( 'isCartItemImageList', () => {
++	test( 'accepts an array of objects, including an empty one', () => {
++		expect( isCartItemImageList( [] ) ).toBe( true );
++		expect( isCartItemImageList( [ image( 1 ), image( 2 ) ] ) ).toBe(
++			true
++		);
++	} );
++
++	test( 'rejects anything else', () => {
++		expect( isCartItemImageList( 'a' ) ).toBe( false );
++		expect( isCartItemImageList( null ) ).toBe( false );
++		expect( isCartItemImageList( [ 'a' ] ) ).toBe( false );
++		expect( isCartItemImageList( [ null ] ) ).toBe( false );
++		expect( isCartItemImageList( [ [ image( 1 ) ] ] ) ).toBe( false );
++	} );
++
++	test( 'validation throws for invalid values', () => {
++		expect( cartItemImagesValidation( [ image( 1 ) ] ) ).toBe( true );
++		expect( () => cartItemImagesValidation( [ 'a' ] ) ).toThrow();
++	} );
++} );
++
++describe( 'getCartItemImages', () => {
++	test( 'returns only the first image without the filter script', () => {
++		const images = [ image( 1 ), image( 2 ) ];
++		expect(
++			getCartItemImages( { images, arg, applyFilter: undefined } )
++		).toEqual( [ image( 1 ) ] );
++	} );
++
++	test( 'returns an empty list for an item without images', () => {
++		expect(
++			getCartItemImages( { images: [], arg, applyFilter: undefined } )
++		).toEqual( [] );
++		expect(
++			getCartItemImages( {
++				images: undefined,
++				arg,
++				applyFilter: undefined,
++			} )
++		).toEqual( [] );
++	} );
++
++	test( 'does not run the filter when there is no cart item', () => {
++		const applyFilter = jest.fn() as unknown as ApplyCheckoutFilter;
++		expect(
++			getCartItemImages( { images: undefined, arg, applyFilter } )
++		).toEqual( [] );
++		expect( applyFilter ).not.toHaveBeenCalled();
++	} );
++
++	test( 'passes the first image, extensions and args to the filter', () => {
++		const applyFilter = jest.fn(
++			( { defaultValue }: { defaultValue: CartImageItem[] } ) =>
++				defaultValue
++		) as unknown as ApplyCheckoutFilter;
++		const extensions = { designer: { design_id: 9 } };
++
++		getCartItemImages( {
++			images: [ image( 1 ), image( 2 ) ],
++			extensions,
++			arg,
++			applyFilter,
++		} );
++
++		expect( applyFilter ).toHaveBeenCalledWith(
++			expect.objectContaining( {
++				filterName: 'cartItemImages',
++				defaultValue: [ image( 1 ) ],
++				extensions,
++				arg,
++				validation: cartItemImagesValidation,
++			} )
++		);
++	} );
++
++	test( 'falls back to the default when the filter returns a non-list', () => {
++		const applyFilter = ( () => 'nope' ) as unknown as ApplyCheckoutFilter;
++		expect(
++			getCartItemImages( {
++				images: [ image( 1 ), image( 2 ) ],
++				arg,
++				applyFilter,
++			} )
++		).toEqual( [ image( 1 ) ] );
++	} );
++
++	describe( 'with the checkout filter registry', () => {
++		test( 'returns the list a registered filter builds', () => {
++			const design = image( 99, 'Your design' );
++			registerCheckoutFilters( 'mini-cart-item-images-test', {
++				cartItemImages: ( value: unknown, extensions: unknown ) =>
++					( extensions as { designer?: unknown } ).designer
++						? [ design, ...( value as CartImageItem[] ) ]
++						: value,
++			} );
++
++			expect(
++				getCartItemImages( {
++					images: [ image( 1 ), image( 2 ) ],
++					extensions: { designer: {} },
++					arg: { ...arg, cartItem: { key: 'with-design' } },
++					applyFilter:
++						applyCheckoutFilter as unknown as ApplyCheckoutFilter,
++				} )
++			).toEqual( [ design, image( 1 ) ] );
++
++			// An item the filter leaves alone keeps its single image.
++			expect(
++				getCartItemImages( {
++					images: [ image( 3 ) ],
++					extensions: {},
++					arg: { ...arg, cartItem: { key: 'plain' } },
++					applyFilter:
++						applyCheckoutFilter as unknown as ApplyCheckoutFilter,
++				} )
++			).toEqual( [ image( 3 ) ] );
++		} );
++	} );
++} );
++
++describe( 'getItemImageAlt', () => {
++	const template = '%1$s, image %2$d of %3$d';
++
++	test( 'uses the image alt when it has one', () => {
++		expect(
++			getItemImageAlt( {
++				image: image( 1, 'Front' ),
++				template,
++				name: 'Shirt',
++				index: 0,
++				total: 2,
++			} )
++		).toBe( 'Front' );
++	} );
++
++	test( 'fills the template with the name and position', () => {
++		expect(
++			getItemImageAlt( {
++				image: image( 2 ),
++				template,
++				name: 'Shirt',
++				index: 1,
++				total: 3,
++			} )
++		).toBe( 'Shirt, image 2 of 3' );
++	} );
++
++	test( 'supports translations that reorder the placeholders', () => {
++		expect(
++			getItemImageAlt( {
++				image: undefined,
++				template: '%2$d/%3$d – %1$s',
++				name: 'Shirt',
++				index: 0,
++				total: 2,
++			} )
++		).toBe( '1/2 – Shirt' );
++	} );
++} );
+diff --git a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php
+index 8cc14f9d31b5cbe7077b8b1bba1825d4d8fee891..81738724454363bdab2d8f6d6d542bf110a442d5 100644
+--- a/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php
++++ b/plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php
+@@ -66,6 +66,9 @@ class MiniCartProductsTableBlock extends AbstractInnerBlock {
+ 
+ 		$available_on_backorder_label = __( 'Available on backorder', 'woocommerce' );
+ 
++		/* translators: 1: product name, 2: image number, 3: number of images. */
++		$item_image_alt_template = __( '%1$s, image %2$d of %3$d', 'woocommerce' );
++
+ 		wp_interactivity_config(
+ 			$this->get_full_block_name(),
+ 			array(
+@@ -73,6 +76,7 @@ class MiniCartProductsTableBlock extends AbstractInnerBlock {
+ 				'increaseQuantityLabel'    => $increase_quantity_label,
+ 				'quantityDescriptionLabel' => $quantity_description_label,
+ 				'removeFromCartLabel'      => $remove_from_cart_label,
++				'itemImageAltTemplate'     => $item_image_alt_template,
+ 			)
+ 		);
+ 
+@@ -118,22 +122,24 @@ class MiniCartProductsTableBlock extends AbstractInnerBlock {
+ 						>
+ 							<td data-wp-context='{ "isImageHidden": false }' class="wc-block-cart-item__image" aria-hidden="true">
+ 								<img
+-									data-wp-bind--hidden="!state.isProductHiddenFromCatalog"
++									data-wp-bind--hidden="!state.isUnlinkedImageShown"
+ 									data-wp-bind--src="state.itemThumbnail"
+ 									data-wp-bind--alt="state.cartItemName"
+ 									data-wp-bind--srcset="state.itemSrcset"
+ 									data-wp-bind--sizes="state.itemSizes"
+ 									data-wp-on--error="actions.hideImage"
+ 								>
++								<?php echo $this->render_item_images_markup( '!state.isUnlinkedImageListShown' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+ 								<a data-wp-bind--hidden="state.isProductHiddenFromCatalog" data-wp-bind--href="state.cartItem.permalink" tabindex="-1">
+ 									<img
+-										data-wp-bind--hidden="context.isImageHidden"
++										data-wp-bind--hidden="state.isLinkedImageHidden"
+ 										data-wp-bind--src="state.itemThumbnail"
+ 										data-wp-bind--alt="state.cartItemName"
+ 										data-wp-bind--srcset="state.itemSrcset"
+ 										data-wp-bind--sizes="state.itemSizes"
+ 										data-wp-on--error="actions.hideImage"
+ 									>
++									<?php echo $this->render_item_images_markup( '!state.hasMultipleImages' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+ 								</a>
+ 							</td>
+ 							<td class="wc-block-cart-item__product">
+@@ -249,6 +255,36 @@ class MiniCartProductsTableBlock extends AbstractInnerBlock {
+ 		return ob_get_clean();
+ 	}
+ 
++	/**
++	 * Render the list of images shown when a cart item has more than one,
++	 * through the `cartItemImages` checkout filter.
++	 *
++	 * @param string $hidden_binding Directive value that hides the list.
++	 * @return string Rendered image list markup.
++	 */
++	protected function render_item_images_markup( $hidden_binding ) {
++		ob_start();
++		?>
++		<ul class="wc-block-components-product-images" data-wp-bind--hidden="<?php echo esc_attr( $hidden_binding ); ?>">
++			<template
++				data-wp-each--item-image="state.itemImages"
++				data-wp-each-key="state.listImageKey"
++			>
++				<li class="wc-block-components-product-images__item">
++					<img
++						data-wp-bind--src="state.listImageSrc"
++						data-wp-bind--alt="state.listImageAlt"
++						data-wp-bind--srcset="state.listImageSrcset"
++						data-wp-bind--sizes="state.listImageSizes"
++						data-wp-on--error="actions.hideListImage"
++					>
++				</li>
++			</template>
++		</ul>
++		<?php
++		return ob_get_clean();
++	}
++
+ 	/**
+ 	 * Render markup for product details.
+ 	 *
+diff --git a/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCartProductsTableBlockTest.php b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCartProductsTableBlockTest.php
+new file mode 100644
+index 0000000000000000000000000000000000000000..91befe14666d17e3f35e9f0a7f32f1a5105d4445
+--- /dev/null
++++ b/plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCartProductsTableBlockTest.php
+@@ -0,0 +1,132 @@
++<?php
++declare( strict_types = 1 );
++
++namespace Automattic\WooCommerce\Tests\Blocks\BlockTypes;
++
++use WC_Unit_Test_Case;
++use WP_HTML_Tag_Processor;
++
++/**
++ * Tests for the Mini-Cart Products Table block's image markup.
++ */
++class MiniCartProductsTableBlockTest extends WC_Unit_Test_Case {
++
++	/**
++	 * Render the block on its own, without processing its directives.
++	 *
++	 * @return string
++	 */
++	private function render_table(): string {
++		$blocks = parse_blocks( '<!-- wp:woocommerce/mini-cart-products-table-block /-->' );
++		return render_block( $blocks[0] );
++	}
++
++	/**
++	 * Collect the attributes of every tag matching a query.
++	 *
++	 * @param string $html      Markup to scan.
++	 * @param array  $query     Tag processor query.
++	 * @param array  $attribute_names Attributes to read.
++	 * @return array<int, array<string, mixed>>
++	 */
++	private function collect_attributes( string $html, array $query, array $attribute_names ): array {
++		$processor = new WP_HTML_Tag_Processor( $html );
++		$found     = array();
++		while ( $processor->next_tag( $query ) ) {
++			$attributes = array();
++			foreach ( $attribute_names as $name ) {
++				$attributes[ $name ] = $processor->get_attribute( $name );
++			}
++			$found[] = $attributes;
++		}
++		return $found;
++	}
++
++	/**
++	 * @testdox The single image keeps its bindings, hidden only through the new image-count aware getters.
++	 */
++	public function test_single_image_bindings(): void {
++		$images = $this->collect_attributes(
++			$this->render_table(),
++			array( 'tag_name' => 'img' ),
++			array( 'data-wp-bind--hidden', 'data-wp-bind--src', 'data-wp-bind--alt', 'data-wp-on--error' )
++		);
++
++		$single = array_values(
++			array_filter(
++				$images,
++				static fn ( $image ) => 'state.itemThumbnail' === $image['data-wp-bind--src']
++			)
++		);
++
++		$this->assertCount( 2, $single, 'There should be one unlinked and one linked single image.' );
++		$this->assertSame( '!state.isUnlinkedImageShown', $single[0]['data-wp-bind--hidden'] );
++		$this->assertSame( 'state.isLinkedImageHidden', $single[1]['data-wp-bind--hidden'] );
++		foreach ( $single as $image ) {
++			$this->assertSame( 'state.cartItemName', $image['data-wp-bind--alt'] );
++			$this->assertSame( 'actions.hideImage', $image['data-wp-on--error'] );
++		}
++	}
++
++	/**
++	 * @testdox Both image lists are hidden unless an item has several images, and loop over state.itemImages.
++	 */
++	public function test_image_lists_are_hidden_by_default(): void {
++		$html  = $this->render_table();
++		$lists = $this->collect_attributes(
++			$html,
++			array(
++				'tag_name'   => 'ul',
++				'class_name' => 'wc-block-components-product-images',
++			),
++			array( 'data-wp-bind--hidden' )
++		);
++
++		$this->assertSame(
++			array( '!state.isUnlinkedImageListShown', '!state.hasMultipleImages' ),
++			array_column( $lists, 'data-wp-bind--hidden' ),
++			'Both lists must bind `hidden` to a negated getter so the server renders them hidden.'
++		);
++
++		$templates   = $this->collect_attributes(
++			$html,
++			array( 'tag_name' => 'template' ),
++			array( 'data-wp-each--item-image', 'data-wp-each-key' )
++		);
++		$image_loops = array_values(
++			array_filter(
++				$templates,
++				static fn ( $template ) => null !== $template['data-wp-each--item-image']
++			)
++		);
++
++		$this->assertCount( 2, $image_loops );
++		foreach ( $image_loops as $loop ) {
++			$this->assertSame( 'state.itemImages', $loop['data-wp-each--item-image'] );
++			$this->assertSame( 'state.listImageKey', $loop['data-wp-each-key'] );
++		}
++	}
++
++	/**
++	 * @testdox The linked image list sits inside the product link, after the single image.
++	 */
++	public function test_linked_list_is_inside_the_product_link(): void {
++		$html = $this->render_table();
++
++		$this->assertMatchesRegularExpression(
++			'#<a data-wp-bind--hidden="state.isProductHiddenFromCatalog"[^>]*>\s*<img[^>]*state.isLinkedImageHidden[^>]*>\s*<ul class="wc-block-components-product-images" data-wp-bind--hidden="!state.hasMultipleImages">#s',
++			$html
++		);
++	}
++
++	/**
++	 * @testdox The alt text template for list images is passed to the frontend.
++	 */
++	public function test_alt_template_is_in_config(): void {
++		$this->render_table();
++
++		$config = wp_interactivity_config( 'woocommerce/mini-cart-products-table-block' );
++
++		$this->assertSame( '%1$s, image %2$d of %3$d', $config['itemImageAltTemplate'] ?? null );
++	}
++}

@@ -191,6 +191,37 @@
 				]
 			},
 			"refreshed_on": "11.3.0"
+		},
+		{
+			"id": "mini-cart-item-images",
+			"upstream_pr": null,
+			"head_repo": "jbouganim/woocommerce",
+			"head_ref": "add/mini-cart-item-images",
+			"pinned_commit": "d71bb8b69cb3584565f46244f571188a2757a8cf",
+			"base_commit": "69f5d91b9e8d22219c88e65f01f2c93be7f626d1",
+			"file": "patches/0007-mini-cart-item-images.patch",
+			"intent": "patches/0007-mini-cart-item-images.intent.md",
+			"allowed_paths": [
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/",
+				"plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php",
+				"plugins/woocommerce/tests/php/src/Blocks/BlockTypes/MiniCartProductsTableBlockTest.php"
+			],
+			"min_version": "11.3.0",
+			"notes": "No upstream PR yet. Uses the cartItemImages filter name from cart-item-images-filter, but does not depend on it.",
+			"watch_paths": [
+				"plugins/woocommerce/src/Blocks/BlockTypes/MiniCartProductsTableBlock.php",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/frontend.ts",
+				"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/mini-cart-contents/style.scss"
+			],
+			"tests": {
+				"jest": [
+					"plugins/woocommerce/client/blocks/assets/js/blocks/mini-cart/utils/test/item-images.ts"
+				],
+				"phpunit": [
+					"MiniCartProductsTableBlockTest"
+				]
+			},
+			"refreshed_on": "11.3.1"
 		}
 	]
 }
